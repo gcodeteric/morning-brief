@@ -308,8 +308,7 @@ NOTA OBRIGATÓRIA NA DESCRIÇÃO:
         md.append("")
         md.append("## PROMPT 4 — YOUTUBE SEMANAL (8-12 min) 📅 DOMINGO")
         md.append("")
-        md.append("*NOTA: os artigos abaixo são os top 5 de hoje como proxy semanal.*")
-        md.append("*Quando a memória semanal real estiver implementada, este bloco será actualizado.*")
+        md.append("*Artigos acumulados ao longo da semana (memória semanal real via weekly_cache.json).*")
         md.append("")
         md.append("````")
         md.append(f"""És o produtor de conteúdo do Simula Project.

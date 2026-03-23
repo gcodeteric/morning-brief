@@ -2,17 +2,18 @@
 SimulaNewsMachine — Planner editorial.
 Camada entre curator e formatter.
 Decide quais artigos vão para cada canal com base na estratégia editorial.
-
-NOTA: youtube_weekly = selected[:5] é um fallback temporário.
-Não representa um resumo real da semana — não há memória semanal ainda.
-Documentado aqui para não criar expectativas falsas.
 """
 
+import json
 import logging
+import os
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+WEEKLY_CACHE_FILE = Path(__file__).parent / "data" / "weekly_cache.json"
 
 DISCORD_MIN_SCORE = 35
 
@@ -113,6 +114,82 @@ def _pick_distinct_secondary(selected, primary):
     return remaining[0] if remaining else None
 
 
+def _load_weekly_cache():
+    """Carrega weekly_cache.json. Descarta entries com mais de 7 dias ou corruptas."""
+    if not WEEKLY_CACHE_FILE.exists():
+        return []
+    try:
+        with open(WEEKLY_CACHE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            return []
+    except Exception:
+        return []
+
+    cutoff = datetime.now() - timedelta(days=7)
+    valid = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            added_at = datetime.fromisoformat(entry["added_at"])
+            if added_at >= cutoff:
+                valid.append(entry)
+        except (KeyError, ValueError, TypeError):
+            continue
+    return valid
+
+
+def _save_weekly_cache(entries):
+    """Guarda weekly_cache.json atomicamente."""
+    try:
+        WEEKLY_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = WEEKLY_CACHE_FILE.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(entries, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(str(tmp), str(WEEKLY_CACHE_FILE))
+    except Exception as e:
+        logger.warning(f"Erro ao guardar weekly_cache: {e}")
+
+
+def _get_youtube_weekly(selected, is_sunday):
+    """
+    Memória semanal real para YouTube roundup.
+    Acumula top 3 de cada dia. Ao domingo devolve top 5 da semana por score.
+    """
+    cache = _load_weekly_cache()
+    now_iso = datetime.now().isoformat()
+
+    # Adicionar top 3 de hoje ao cache (dedup por link)
+    existing_links = {e.get("link") for e in cache}
+    added = 0
+    for article in selected[:3]:
+        link = article.get("link", "")
+        if link and link not in existing_links:
+            cache.append({
+                "title": article.get("title", ""),
+                "source": article.get("source", ""),
+                "link": link,
+                "summary": article.get("summary", ""),
+                "category": article.get("category", ""),
+                "score": article.get("score", 0),
+                "added_at": now_iso,
+            })
+            existing_links.add(link)
+            added += 1
+
+    _save_weekly_cache(cache)
+    logger.info(f"Planner: weekly cache={len(cache)} entries (+{added} hoje)")
+
+    if is_sunday:
+        # Top 5 da semana por score
+        ranked = sorted(cache, key=lambda x: x.get("score", 0), reverse=True)
+        return ranked[:5]
+    return []
+
+
 def plan(curated):
     selected = curated.get("selected", [])
     now = datetime.now()
@@ -138,9 +215,12 @@ def plan(curated):
 
     yt_daily = _youtube_daily_candidate(selected)
 
-    # NOTA: youtube_weekly é um proxy do top 5 de hoje, não um resumo real da semana
-    # A memória semanal real ainda não está implementada — este é um fallback temporário
-    yt_weekly = selected[:5] if is_sunday else []
+    # Memória semanal real — acumula top 3/dia, devolve top 5 ao domingo
+    try:
+        yt_weekly = _get_youtube_weekly(selected, is_sunday)
+    except Exception as e:
+        logger.warning(f"youtube_weekly: fallback para selected[:5] (weekly cache indisponível): {e}")
+        yt_weekly = selected[:5] if is_sunday else []
 
     reddit = _reddit_eligible(selected)
     best = selected[0] if selected else None
@@ -154,7 +234,7 @@ def plan(curated):
         "x_thread_1": ig_sim,
         "x_thread_2": ig_moto,
         "youtube_daily": yt_daily,
-        "youtube_weekly": yt_weekly,  # fallback temporário: top 5 de hoje
+        "youtube_weekly": yt_weekly,  # memória semanal real via weekly_cache.json
         "reddit_candidates": reddit,
         "discord_post": discord_post,
         "is_sunday": is_sunday,

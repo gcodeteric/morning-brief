@@ -9,6 +9,7 @@ data/run_summary.json
 data/seen_links.json
 data/extracted_channel_ids.json
 data/alerts.json
+data/weekly_cache.json
 
 # Claude Code
 .claude/
