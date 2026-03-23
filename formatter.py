@@ -264,7 +264,7 @@ Escolhe a noticia com maior potencial viral da lista acima e gera TUDO para um Y
 
 8. **Musica sugerida:** estilo/mood para biblioteca YouTube gratuita
 
-NOTA OBRIGATORIA NA DESCRICAO:
+NOTA OBRIGATÓRIA NA DESCRIÇÃO:
 {NOTA_IA_YOUTUBE}
 {NOTAS_LEGAIS_SOCIAL}
 {REGRA_NAO_PUBLICAR}
@@ -330,7 +330,7 @@ Gera TUDO:
 
 8. **Cards e End Screen:** quando inserir e para que videos/playlists
 
-NOTA OBRIGATORIA NA DESCRICAO:
+NOTA OBRIGATÓRIA NA DESCRIÇÃO:
 {NOTA_IA_YOUTUBE}
 {NOTAS_LEGAIS_SOCIAL}
 {REGRA_NAO_PUBLICAR}
