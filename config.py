@@ -24,12 +24,14 @@ MIN_RELEVANCE_SCORE = 15
 SEEN_LINKS_MAX_AGE_HOURS = 72  # Limpar links com mais de 3 dias
 
 GUARANTEE_CATEGORIES = {
+    "sim_racing": 2,    # Categoria nuclear do negócio
     "nostalgia": 1,
     "hardware": 1,
     "motorsport": 1,
     "racing_games": 1,
 }
 GUARANTEE_PORTUGAL = True
+MAX_PER_SOURCE = 3  # Máximo de artigos por fonte no top 15
 
 # Criar pastas se não existirem
 for d in [LOG_DIR, ARCHIVE_DIR, OUTPUT_DIR, DATA_DIR]:

@@ -6,19 +6,29 @@ Testa TODOS os feeds e dá um relatório OK/FAIL.
 """
 
 import sys
+
 import feedparser
+import requests
 
 from feeds import get_all_feeds
 from config import FEED_TIMEOUT_SECONDS
 
 
+# FIX B.4 — Usar requests com timeout (como o scanner)
 def validate_feed(feed_info):
     """Testa um feed individual. Retorna (status, num_entries, erro)."""
     url = feed_info["url"]
-    name = feed_info["name"]
 
     try:
-        parsed = feedparser.parse(url)
+        try:
+            resp = requests.get(url, timeout=FEED_TIMEOUT_SECONDS, headers={
+                "User-Agent": "SimulaNewsMachine/2.2"
+            })
+            resp.raise_for_status()
+            parsed = feedparser.parse(resp.content)
+        except requests.exceptions.RequestException:
+            # Fallback para feedparser directo
+            parsed = feedparser.parse(url)
 
         # Verificar se houve erro de parsing
         if parsed.bozo and not parsed.entries:
@@ -49,19 +59,18 @@ def main():
 
     for i, feed in enumerate(feeds, 1):
         name = feed["name"]
-        url = feed["url"]
         cat = feed["cat"]
 
         status, count, error = validate_feed(feed)
 
         if status == "OK":
-            print(f"  [{i:3d}] OK   {name:30s} ({cat:15s}) — {count} artigos")
+            print(f"  [{i:3d}] OK   {name:30s} ({cat:15s}) -- {count} artigos")
             results["OK"].append(feed)
         elif status == "WARN":
-            print(f"  [{i:3d}] WARN {name:30s} ({cat:15s}) — {error}")
+            print(f"  [{i:3d}] WARN {name:30s} ({cat:15s}) -- {error}")
             results["WARN"].append(feed)
         else:
-            print(f"  [{i:3d}] FAIL {name:30s} ({cat:15s}) — {error}")
+            print(f"  [{i:3d}] FAIL {name:30s} ({cat:15s}) -- {error}")
             results["FAIL"].append(feed)
 
     # Resumo final

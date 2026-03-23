@@ -14,34 +14,10 @@ import feedparser
 import requests
 from dateutil import parser as dateutil_parser
 
-from config import HOURS_LOOKBACK, FEED_TIMEOUT_SECONDS, SEEN_LINKS_FILE, SEEN_LINKS_MAX_AGE_HOURS
+from config import HOURS_LOOKBACK, FEED_TIMEOUT_SECONDS
 from feeds import get_all_feeds
 
 logger = logging.getLogger(__name__)
-
-
-def _load_seen_links():
-    """Carrega links já vistos em briefs anteriores."""
-    if SEEN_LINKS_FILE.exists():
-        try:
-            with open(SEEN_LINKS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            # Limpar links com mais de SEEN_LINKS_MAX_AGE_HOURS
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=SEEN_LINKS_MAX_AGE_HOURS)
-            cleaned = {}
-            for link, timestamp_str in data.items():
-                try:
-                    ts = datetime.fromisoformat(timestamp_str)
-                    if ts.tzinfo is None:
-                        ts = ts.replace(tzinfo=timezone.utc)
-                    if ts > cutoff:
-                        cleaned[link] = timestamp_str
-                except (ValueError, TypeError):
-                    pass
-            return cleaned
-        except Exception:
-            return {}
-    return {}
 
 
 def _parse_date(entry):
@@ -65,7 +41,7 @@ def _parse_date(entry):
 
 
 def _scan_single_feed(feed_info):
-    """Scan um feed individual. Retorna lista de artigos."""
+    """Scan um feed individual. Retorna dict com status e artigos."""
     url = feed_info["url"]
     name = feed_info["name"]
     category = feed_info["cat"]
@@ -73,19 +49,34 @@ def _scan_single_feed(feed_info):
     articles = []
 
     try:
-        # Usar requests com timeout real, depois feedparser para parsing
+        # FIX 1.2 — Usar requests com timeout real + raise_for_status
+        parsed = None
         try:
             resp = requests.get(url, timeout=FEED_TIMEOUT_SECONDS, headers={
-                "User-Agent": "SimulaNewsMachine/2.1"
+                "User-Agent": "SimulaNewsMachine/2.2"
             })
+            resp.raise_for_status()
             parsed = feedparser.parse(resp.content)
         except requests.exceptions.RequestException:
-            # Fallback para feedparser directo (alguns feeds precisam)
-            parsed = feedparser.parse(url)
+            parsed = None  # Forçar fallback
+
+        # Se requests falhou OU deu bozo sem entries, tentar feedparser directo
+        if parsed is None or (parsed.bozo and not parsed.entries):
+            try:
+                parsed = feedparser.parse(url)
+            except Exception as fallback_err:
+                return {"status": "FAIL", "articles": [], "error": str(fallback_err)}
+
+        # FIX 1.3 — Verificar bozo flag (após ambas as tentativas)
+        if parsed.bozo and not parsed.entries:
+            return {
+                "status": "FAIL",
+                "articles": [],
+                "error": f"Feed malformado: {getattr(parsed, 'bozo_exception', 'desconhecido')}",
+            }
 
         if not parsed.entries:
-            logger.debug(f"Feed '{name}' sem entradas")
-            return articles
+            return {"status": "EMPTY", "articles": [], "error": None}
 
         now = datetime.now(timezone.utc)
         lookback_cutoff = now - timedelta(hours=HOURS_LOOKBACK)
@@ -132,10 +123,15 @@ def _scan_single_feed(feed_info):
                 "no_date": no_date,
             })
 
+        # FIX 1.1 — Distinguir OK de EMPTY
+        if articles:
+            return {"status": "OK", "articles": articles, "error": None}
+        else:
+            return {"status": "EMPTY", "articles": [], "error": None}
+
     except Exception as e:
         logger.warning(f"Erro ao ler feed '{name}' ({url}): {e}")
-
-    return articles
+        return {"status": "FAIL", "articles": [], "error": str(e)}
 
 
 def scan_all_feeds():
@@ -148,32 +144,30 @@ def scan_all_feeds():
     stats = {
         "total": len(feeds),
         "ok": 0,
+        "empty": 0,
         "fail": 0,
         "failed_names": [],
     }
 
+    # FIX 1.1 — Contar status real de cada feed
     for feed in feeds:
-        try:
-            articles = _scan_single_feed(feed)
-            if articles:
-                all_articles.extend(articles)
-                stats["ok"] += 1
-            else:
-                # Feed OK mas sem artigos na janela temporal
-                stats["ok"] += 1
-        except Exception as e:
-            logger.warning(f"Feed falhou completamente: {feed['name']} — {e}")
+        result = _scan_single_feed(feed)
+
+        if result["status"] == "OK":
+            all_articles.extend(result["articles"])
+            stats["ok"] += 1
+        elif result["status"] == "EMPTY":
+            stats["empty"] += 1
+        else:  # FAIL
             stats["fail"] += 1
             stats["failed_names"].append(feed["name"])
+            logger.warning(f"Feed falhou: {feed['name']} — {result['error']}")
 
-    # Excluir links já vistos
-    seen = _load_seen_links()
-    if seen:
-        before = len(all_articles)
-        all_articles = [a for a in all_articles if a["link"] not in seen]
-        excluded = before - len(all_articles)
-        if excluded > 0:
-            logger.info(f"Excluídos {excluded} artigos já vistos em briefs anteriores")
+    # FIX 1.5 — Removida filtragem de seen_links aqui.
+    # TODA a deduplicação cross-dia é feita no curator.
 
-    logger.info(f"Scan completo: {stats['ok']}/{stats['total']} feeds OK, {len(all_articles)} artigos")
+    logger.info(
+        f"Scan completo: {stats['ok']} OK, {stats['empty']} vazios, "
+        f"{stats['fail']} falhas, {len(all_articles)} artigos"
+    )
     return all_articles, stats

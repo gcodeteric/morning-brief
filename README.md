@@ -5,7 +5,7 @@
 Sistema automático que todas as manhãs te entrega um ficheiro no Desktop com as 15 notícias mais importantes de sim racing, motorsport, hardware, racing games e simuladores, prontas a transformar em posts para redes sociais.
 
 **O que faz:**
-- Lê ~90 feeds RSS (sites + canais YouTube) todas as noites às 05:00
+- Inclui 57 feeds RSS prontos a usar + suporte para ~22 canais YouTube adicionais (correr channel_id_extractor.py para activar)
 - Filtra, pontua e seleciona as 15 notícias mais relevantes
 - Gera um ficheiro `SIMULA_BRIEF_HOJE.md` no teu Desktop
 - Inclui 5 prompts prontos para copiar/colar no Claude e criar posts
@@ -21,18 +21,13 @@ Sistema automático que todas as manhãs te entrega um ficheiro no Desktop com a
 - **IMPORTANTE:** Marcar ✅ **"Add Python to PATH"** durante a instalação
 - Clicar "Install Now"
 
-### 2. Abrir o terminal
+### 2. Abrir o terminal na pasta do projeto
 
-- Carregar a tecla **Windows** no teclado
-- Escrever **cmd** e pressionar **Enter**
+Abre o **Explorador de Ficheiros**, navega até à pasta do projeto, clica na **barra de endereço** (onde aparece o caminho), escreve **cmd** e carrega **Enter**.
 
-### 3. Ir para a pasta do projeto
+Isto abre o terminal já na pasta certa.
 
-```
-cd C:\Users\berna\Desktop\Simula_Project\morning-brief
-```
-
-### 4. Instalar dependências
+### 3. Instalar dependências
 
 ```
 pip install -r requirements.txt
@@ -43,7 +38,7 @@ Deves ver mensagens a dizer "Successfully installed...". Se der erro, tenta:
 python -m pip install -r requirements.txt
 ```
 
-### 5. Extrair YouTube Channel IDs (só uma vez)
+### 4. Extrair YouTube Channel IDs (só uma vez)
 
 ```
 python channel_id_extractor.py
@@ -51,7 +46,7 @@ python channel_id_extractor.py
 
 Isto vai buscar os IDs dos canais YouTube. Demora ~1 minuto. Vais ver OK ou FALHOU para cada canal.
 
-### 6. Testar que os feeds funcionam (só uma vez)
+### 5. Testar que os feeds funcionam (só uma vez)
 
 ```
 python feed_validator.py
@@ -59,7 +54,7 @@ python feed_validator.py
 
 Isto testa todos os feeds. É normal alguns falharem — o sistema funciona na mesma sem eles.
 
-### 7. Testar o sistema
+### 6. Testar o sistema
 
 ```
 python main.py
@@ -67,18 +62,18 @@ python main.py
 
 Deves ver mensagens como:
 ```
-=== SimulaNewsMachine v2.1 iniciada ===
+=== SimulaNewsMachine v2.2 iniciada ===
 Passo 1: Scanning feeds...
 Passo 2: Curating...
 Passo 3: Formatting...
-=== Concluído com sucesso ===
+=== Concluido com sucesso ===
 ```
 
-### 8. Verificar resultado
+### 7. Verificar resultado
 
 Abrir o ficheiro **SIMULA_BRIEF_HOJE.md** no Desktop. Podes abrir com qualquer editor de texto (Notepad, VS Code, etc.)
 
-### 9. Agendar para correr automaticamente
+### 8. Agendar para correr automaticamente
 
 **Duplo-clique** no ficheiro `setup_scheduler.bat`
 
@@ -99,20 +94,20 @@ Se pedir permissão de administrador, clicar "Sim".
 
 | Problema | Solução |
 |----------|---------|
-| O ficheiro não aparece no Desktop | Abrir cmd, ir à pasta, correr `python main.py` |
+| O ficheiro não aparece no Desktop | Abrir cmd na pasta do projeto, correr `python main.py` |
 | Erro "Python not found" | Reinstalar Python com "Add to PATH" marcado |
 | Alguns feeds falharam | Normal! O sistema continua com os outros |
 | Quero ver que feeds falharam | Correr `python feed_validator.py` |
-| Quero ver os logs | Abrir pasta `SimulaNewsMachine\logs\` |
+| Quero ver os logs | Abrir pasta `logs\` dentro do projeto |
 | Quero re-testar tudo | Correr `python main.py` |
-| Quero ver o resumo da última execução | Abrir `SimulaNewsMachine\data\run_summary.json` |
+| Quero ver o resumo da última execução | Abrir `data\run_summary.json` dentro do projeto |
 
 ---
 
 ## Estrutura de Pastas
 
 ```
-SimulaNewsMachine\
+morning-brief\
 ├── main.py                  ← Script principal
 ├── config.py                ← Configurações
 ├── scanner.py               ← Lê os feeds RSS

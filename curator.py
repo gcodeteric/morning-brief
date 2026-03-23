@@ -6,14 +6,16 @@ Deduplica, pontua, garante diversidade, seleciona top 15.
 
 import json
 import logging
+import os
 import re
 import string
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse, parse_qs, urlencode
 
 from config import (
     MAX_ARTICLES_OUTPUT, MIN_RELEVANCE_SCORE, SEEN_LINKS_FILE,
-    GUARANTEE_CATEGORIES, GUARANTEE_PORTUGAL,
+    GUARANTEE_CATEGORIES, GUARANTEE_PORTUGAL, MAX_PER_SOURCE,
+    SEEN_LINKS_MAX_AGE_HOURS,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,11 +39,15 @@ HIGH_RELEVANCE_KEYWORDS = [
     "f1 24", "f1 25", "f1 game", "ea sports f1",
 ]
 
-BRAND_KEYWORDS = [
-    "moza", "simucube", "sim-lab", "simlab", "heusinkveld",
+# FIX 2.3 — Separar marcas parceiras de concorrentes
+OUR_BRANDS = [
+    "moza", "simucube", "sim-lab", "simlab", "heusinkveld", "akracing",
+]
+
+OTHER_HARDWARE_BRANDS = [
     "fanatec", "thrustmaster", "simagic", "asetek",
     "trak racer", "next level racing", "playseat",
-    "cubcontrols", "cube controls",
+    "cube controls",
 ]
 
 NOSTALGIA_KEYWORDS = [
@@ -65,10 +71,16 @@ CROSSOVER_KEYWORDS = [
     "lando norris sim", "charles leclerc sim",
 ]
 
+# FIX 2.4 — Keywords Portugal expandidas
 PORTUGAL_KEYWORDS = [
     "portugal", "português", "portuguese", "lisboa", "porto",
-    "ibéria", "iberia", "espanha", "spain", "spanish",
+    "ibéria", "iberia", "espanha", "spain",
     "portimão", "algarve", "estoril",
+    "fpak",
+    "torres vedras",
+    "simracing portugal",
+    "srp",
+    "rally de portugal",
 ]
 
 LOW_VALUE_KEYWORDS = [
@@ -152,10 +164,16 @@ def _score_article(article):
             kw_bonus += 5
     score += min(kw_bonus, 20)
 
-    # Nossas marcas: +10
-    for brand in BRAND_KEYWORDS:
+    # FIX 2.3 — Marcas parceiras: +10
+    for brand in OUR_BRANDS:
         if brand in text:
             score += 10
+            break
+
+    # FIX 2.3 — Outras marcas hardware: +5 (não +10)
+    for brand in OTHER_HARDWARE_BRANDS:
+        if brand in text:
+            score += 5
             break
 
     # Nostalgia: +10
@@ -195,22 +213,46 @@ def _score_article(article):
     return max(min(score, 100), 0)
 
 
+# FIX 2.6 — seen_links agora guarda metadata (ts, source, title)
 def _load_seen_links():
-    """Carrega seen_links.json."""
-    if SEEN_LINKS_FILE.exists():
-        try:
-            with open(SEEN_LINKS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-
-def _save_seen_links(seen):
-    """Guarda seen_links.json."""
+    """Carrega seen_links.json. Limpa entradas com mais de SEEN_LINKS_MAX_AGE_HOURS."""
+    if not SEEN_LINKS_FILE.exists():
+        return {}
     try:
-        with open(SEEN_LINKS_FILE, "w", encoding="utf-8") as f:
+        with open(SEEN_LINKS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return {}
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=SEEN_LINKS_MAX_AGE_HOURS)
+    cleaned = {}
+    for link, value in data.items():
+        try:
+            # Suportar formato novo (dict com ts) e antigo (string ISO)
+            if isinstance(value, dict):
+                ts_str = value.get("ts", "")
+            else:
+                ts_str = value
+            ts = datetime.fromisoformat(ts_str)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts > cutoff:
+                cleaned[link] = value
+        except (ValueError, TypeError):
+            pass
+    return cleaned
+
+
+# FIX 2.7 — Escrita atómica de seen_links.json
+def _save_seen_links(seen):
+    """Guarda seen_links.json atomicamente."""
+    try:
+        tmp = SEEN_LINKS_FILE.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(seen, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(str(tmp), str(SEEN_LINKS_FILE))
     except Exception as e:
         logger.warning(f"Erro ao guardar seen_links: {e}")
 
@@ -238,7 +280,6 @@ def curate_articles(articles):
     for article in articles:
         canon = _canonicalize_url(article["link"])
         if canon in seen_urls:
-            # Manter o de maior priority
             existing = seen_urls[canon]
             if article["priority"] > existing["priority"]:
                 deduped_by_url.remove(existing)
@@ -258,7 +299,6 @@ def curate_articles(articles):
         is_dup = False
         for i, existing_tokens in enumerate(title_tokens_list):
             if _title_similarity(tokens, existing_tokens) > 0.65:
-                # Manter o de maior priority
                 if article["priority"] > deduped_by_title[i]["priority"]:
                     deduped_by_title[i] = article
                     title_tokens_list[i] = tokens
@@ -269,13 +309,16 @@ def curate_articles(articles):
             title_tokens_list.append(tokens)
 
     # ========================================================================
-    # Dedup camada 3: Cross-dia (seen_links.json)
+    # Dedup camada 3: Cross-dia (seen_links.json) — FIX 2.6: por URL canónica
     # ========================================================================
     seen_links = _load_seen_links()
-    deduped = [a for a in deduped_by_title if a["link"] not in seen_links]
+    deduped = [
+        a for a in deduped_by_title
+        if _canonicalize_url(a["link"]) not in seen_links
+    ]
 
     total_after = len(deduped)
-    logger.info(f"Dedup: {total_before} → {total_after} artigos")
+    logger.info(f"Dedup: {total_before} -> {total_after} artigos")
 
     # ========================================================================
     # Scoring
@@ -283,14 +326,13 @@ def curate_articles(articles):
     for article in deduped:
         article["score"] = _score_article(article)
 
-    # Bónus novidade de fonte pouco recorrente
-    # Contar quantas vezes cada fonte aparece nos artigos já seleccionados anteriormente
-    selected_sources = {}
+    # FIX 2.5 — Source rarity bonus: fontes que não apareceram em briefs recentes +5
+    recent_sources = set()
+    for entry in seen_links.values():
+        if isinstance(entry, dict) and "source" in entry:
+            recent_sources.add(entry["source"])
     for article in deduped:
-        src = article["source"]
-        selected_sources[src] = selected_sources.get(src, 0) + 1
-    for article in deduped:
-        if selected_sources.get(article["source"], 0) <= 2:
+        if article["source"] not in recent_sources:
             article["score"] = min(article["score"] + 5, 100)
 
     # Ordenar por score desc
@@ -301,55 +343,72 @@ def curate_articles(articles):
     # ========================================================================
     selected = []
     used_indices = set()
+    source_counts = {}  # FIX 2.1 — Contar fontes para limite por fonte
 
     # Primeiro: garantir categorias mínimas
     for cat, min_count in GUARANTEE_CATEGORIES.items():
         cat_articles = [
             (i, a) for i, a in enumerate(deduped)
-            if a["category"] == cat and i not in used_indices and a["score"] >= MIN_RELEVANCE_SCORE
+            if a["category"] == cat and i not in used_indices
+            and a["score"] >= MIN_RELEVANCE_SCORE
+            and source_counts.get(a["source"], 0) < MAX_PER_SOURCE
         ]
         for j in range(min(min_count, len(cat_articles))):
             idx, article = cat_articles[j]
             selected.append(article)
             used_indices.add(idx)
+            source_counts[article["source"]] = source_counts.get(article["source"], 0) + 1
 
     # Garantir Portugal se disponível
     if GUARANTEE_PORTUGAL:
         pt_articles = [
             (i, a) for i, a in enumerate(deduped)
             if a["category"] == "portugal" and i not in used_indices
+            and source_counts.get(a["source"], 0) < MAX_PER_SOURCE
         ]
         if pt_articles:
             idx, article = pt_articles[0]
             selected.append(article)
             used_indices.add(idx)
+            source_counts[article["source"]] = source_counts.get(article["source"], 0) + 1
 
-    # Preencher restantes por score
+    # FIX 2.1 — Preencher restantes por score COM limite por fonte
     for i, article in enumerate(deduped):
         if len(selected) >= MAX_ARTICLES_OUTPUT:
             break
         if i not in used_indices and article["score"] >= MIN_RELEVANCE_SCORE:
-            selected.append(article)
-            used_indices.add(i)
+            src = article["source"]
+            if source_counts.get(src, 0) < MAX_PER_SOURCE:
+                selected.append(article)
+                used_indices.add(i)
+                source_counts[src] = source_counts.get(src, 0) + 1
 
-    # Se não temos 15, baixar o threshold
+    # Se não temos 15, baixar o threshold (mas manter limite por fonte)
     if len(selected) < MAX_ARTICLES_OUTPUT:
         for i, article in enumerate(deduped):
             if len(selected) >= MAX_ARTICLES_OUTPUT:
                 break
             if i not in used_indices:
-                selected.append(article)
-                used_indices.add(i)
+                src = article["source"]
+                if source_counts.get(src, 0) < MAX_PER_SOURCE:
+                    selected.append(article)
+                    used_indices.add(i)
+                    source_counts[src] = source_counts.get(src, 0) + 1
 
     # Re-ordenar selecção por score
     selected.sort(key=lambda a: a["score"], reverse=True)
 
     # ========================================================================
-    # Actualizar seen_links com links seleccionados
+    # FIX 2.6 — Guardar seen_links por URL canónica com metadata
     # ========================================================================
     now_iso = datetime.now(timezone.utc).isoformat()
     for article in selected:
-        seen_links[article["link"]] = now_iso
+        canon = _canonicalize_url(article["link"])
+        seen_links[canon] = {
+            "ts": now_iso,
+            "source": article["source"],
+            "title": article["title"][:80],
+        }
     _save_seen_links(seen_links)
 
     # ========================================================================

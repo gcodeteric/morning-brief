@@ -1,14 +1,41 @@
-"""SimulaNewsMachine v2.1 — Corre diariamente às 05:00"""
+"""SimulaNewsMachine v2.2 — Corre diariamente às 05:00"""
 
 import logging
+import os
 import shutil
 import json
 import sys
 from datetime import datetime
 
 from config import (
-    LOG_DIR, ARCHIVE_DIR, OUTPUT_FILE, RUN_SUMMARY_FILE,
+    LOG_DIR, ARCHIVE_DIR, OUTPUT_FILE, RUN_SUMMARY_FILE, DATA_DIR,
 )
+
+# FIX B.1 — Instance locking
+LOCK_FILE = DATA_DIR / "instance.lock"
+
+
+def acquire_lock():
+    """Tenta adquirir lock. Retorna True se conseguiu."""
+    try:
+        fd = os.open(str(LOCK_FILE), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        return True
+    except FileExistsError:
+        # Verificar se o PID ainda está vivo
+        try:
+            pid = int(LOCK_FILE.read_text().strip())
+            os.kill(pid, 0)  # Testar se o processo existe
+            return False
+        except (ProcessLookupError, ValueError, OSError):
+            LOCK_FILE.unlink(missing_ok=True)
+            return acquire_lock()
+
+
+def release_lock():
+    """Liberta o lock."""
+    LOCK_FILE.unlink(missing_ok=True)
 
 
 def setup_logging():
@@ -23,11 +50,15 @@ def setup_logging():
 
 
 def main():
-    started_at = datetime.now().isoformat()
-    setup_logging()
-    logging.info("=== SimulaNewsMachine v2.1 iniciada ===")
+    if not acquire_lock():
+        print("Outra instancia ja esta a correr. A sair.")
+        sys.exit(0)
 
     try:
+        started_at = datetime.now().isoformat()
+        setup_logging()
+        logging.info("=== SimulaNewsMachine v2.2 iniciada ===")
+
         from scanner import scan_all_feeds
         from curator import curate_articles
         from formatter import format_brief
@@ -35,42 +66,47 @@ def main():
         # Scan
         logging.info("Passo 1: Scanning feeds...")
         raw, scan_stats = scan_all_feeds()
-        logging.info(f"   → {len(raw)} artigos encontrados")
+        logging.info(f"   -> {len(raw)} artigos encontrados")
 
         # Curate
         logging.info("Passo 2: Curating...")
         curated = curate_articles(raw)
-        logging.info(f"   → {len(curated['selected'])} selecionados")
+        logging.info(f"   -> {len(curated['selected'])} selecionados")
 
         # Format
         logging.info("Passo 3: Formatting...")
         format_brief(curated, OUTPUT_FILE)
-        logging.info(f"   → Brief guardado em {OUTPUT_FILE}")
+        logging.info(f"   -> Brief guardado em {OUTPUT_FILE}")
 
         # Archive
         archive_file = ARCHIVE_DIR / f"{datetime.now().strftime('%Y-%m-%d')}_brief.md"
         shutil.copy2(OUTPUT_FILE, archive_file)
-        logging.info(f"   → Arquivo guardado em {archive_file}")
+        logging.info(f"   -> Arquivo guardado em {archive_file}")
 
-        # Generate run_summary.json
+        # FIX 1.4 — run_summary.json com métricas completas
         summary = {
             "started_at": started_at,
             "ended_at": datetime.now().isoformat(),
             "feeds_total": scan_stats.get("total", 0),
             "feeds_ok": scan_stats.get("ok", 0),
+            "feeds_empty": scan_stats.get("empty", 0),
             "feeds_fail": scan_stats.get("fail", 0),
             "feeds_failed_names": scan_stats.get("failed_names", []),
             "articles_scanned": len(raw),
+            "articles_after_dedup": curated.get("total_after_dedup", 0),
             "articles_selected": len(curated["selected"]),
-            "top_sources": [a["source"] for a in curated["selected"][:5]],
+            "top_sources": list(dict.fromkeys(
+                a["source"] for a in curated["selected"][:8]
+            ))[:5],
+            "categories": curated.get("categories", {}),
             "brief_file": str(OUTPUT_FILE),
             "status": "OK",
         }
         with open(RUN_SUMMARY_FILE, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
 
-        logging.info("   → run_summary.json actualizado")
-        logging.info("=== Concluído com sucesso ===")
+        logging.info("   -> run_summary.json actualizado")
+        logging.info("=== Concluido com sucesso ===")
 
     except Exception as e:
         logging.error(f"ERRO FATAL: {e}", exc_info=True)
@@ -89,6 +125,9 @@ def main():
             pass
 
         sys.exit(1)
+
+    finally:
+        release_lock()
 
 
 if __name__ == "__main__":

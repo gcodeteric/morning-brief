@@ -1,19 +1,43 @@
 {
-  "started_at": "2026-03-23T11:13:38.870721",
-  "ended_at": "2026-03-23T11:15:59.279587",
+  "started_at": "2026-03-23T11:51:04.182435",
+  "ended_at": "2026-03-23T11:53:30.567957",
   "feeds_total": 57,
-  "feeds_ok": 57,
-  "feeds_fail": 0,
-  "feeds_failed_names": [],
-  "articles_scanned": 61,
+  "feeds_ok": 17,
+  "feeds_empty": 25,
+  "feeds_fail": 15,
+  "feeds_failed_names": [
+    "RacingGames.gg",
+    "BeamNG Blog",
+    "RaceRoom",
+    "GIANTS Software",
+    "Flightsim.to",
+    "SimRace247",
+    "Random Callsign",
+    "SimRacing.GP",
+    "SimRacingDeal",
+    "DrivingItalia",
+    "vRacingnews DE",
+    "Fanatec Blog",
+    "MOZA Blog",
+    "FlightSim.com",
+    "MSFS Addons"
+  ],
+  "articles_scanned": 76,
+  "articles_after_dedup": 74,
   "articles_selected": 15,
   "top_sources": [
-    "Boosted Media",
-    "The Simpit",
-    "OC Racing",
+    "Boosted Media YT",
+    "OverTake.gg",
     "Motorsport.com",
-    "Motorsport.com"
+    "OC Racing",
+    "aarava"
   ],
+  "categories": {
+    "hardware": 1,
+    "sim_racing": 7,
+    "motorsport": 3,
+    "racing_games": 4
+  },
   "brief_file": "C:\\Users\\berna\\Desktop\\SIMULA_BRIEF_HOJE.md",
   "status": "OK"
 }
