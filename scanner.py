@@ -17,6 +17,11 @@ from dateutil import parser as dateutil_parser
 from config import HOURS_LOOKBACK, FEED_TIMEOUT_SECONDS
 from feeds import get_all_feeds
 
+import socket
+# Safety net for feedparser fallback, which may open sockets internally without explicit timeout.
+# Acceptable here because this is a standalone scheduled script, not a library.
+socket.setdefaulttimeout(FEED_TIMEOUT_SECONDS)
+
 logger = logging.getLogger(__name__)
 
 

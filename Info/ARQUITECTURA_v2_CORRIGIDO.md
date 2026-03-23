@@ -7,8 +7,8 @@ Fontes
 
 
 ## VISÃO GERAL
-Sistema Python que corre TODAS AS NOITES às 05:00 no Windows PC, varre ~90 RSS
-feeds (escalável para 150+), organiza por relevância, e de manhã entrega ficheiro .md no
+Sistema Python que corre TODAS AS NOITES às 05:00 no Windows PC, varre ~57-79 feeds
+operacionais (57 prontos + ~22 via channel_id_extractor.py, escalável para 150+), organiza por relevância, e de manhã entrega ficheiro .md no
 Desktop com daily brief + 5 prompts prontos a colar no Claude.
 
 Stack: Python 3.11+ | feedparser | requests | python-dateutil | Windows Task Scheduler
@@ -24,7 +24,7 @@ C:\Users\Bernardo\SimulaNewsMachine\
 ├── scanner.py                         # Módulo 1: Lê RSS feeds
 ├── curator.py                         # Módulo 2: Deduplica, classifica, seleciona
 ├── formatter.py                       # Módulo 3: Gera .md + prompts
-├── feeds.py                           # RSS feeds (~90 + dinâmicos do JSON)
+├── feeds.py                           # RSS feeds (57 + dinâmicos do JSON)
 ├── channel_id_extractor.py            # Extrai YouTube channel_ids (correr 1x)
 ├── feed_validator.py                  # Testa feeds (1x + manutenção semanal)
 ├── requirements.txt                   # Dependências
@@ -120,7 +120,7 @@ Para channel_ids PARCIAIS, correr channel_id_extractor.py primeiro
 
 
 ```
-# feeds.py — TODAS AS FONTES (~90 operacionais, escalável para 150+)
+# feeds.py — TODAS AS FONTES (~57-79 operacionais, escalável para 150+)
 # Organizado por Tier (prioridade) e Categoria
 # priority: 1-10 (10 = máxima)
 

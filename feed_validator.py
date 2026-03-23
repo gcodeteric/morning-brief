@@ -13,6 +13,10 @@ import requests
 from feeds import get_all_feeds
 from config import FEED_TIMEOUT_SECONDS
 
+import socket
+# Safety net for feedparser fallback, which may open sockets internally without explicit timeout.
+socket.setdefaulttimeout(FEED_TIMEOUT_SECONDS)
+
 
 # FIX B.4 — Usar requests com timeout (como o scanner)
 def validate_feed(feed_info):

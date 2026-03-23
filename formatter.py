@@ -34,20 +34,20 @@ DIAS_SEMANA = {
 
 # FIX 3.1 — Regra editorial obrigatória para todos os prompts
 REGRA_NAO_PUBLICAR = """
-REGRA EDITORIAL OBRIGATORIA:
-Se alguma das noticias for fraca, redundante, excessivamente promocional ou sem substancia suficiente para gerar conteudo de qualidade, responde:
-"NAO PUBLICAR — [motivo]"
-E melhor nao publicar do que publicar conteudo fraco. A reputacao do Simula Project depende da qualidade, nao da quantidade."""
+REGRA EDITORIAL OBRIGATÓRIA:
+Se alguma das notícias for fraca, redundante, excessivamente promocional ou sem substância suficiente para gerar conteúdo de qualidade, responde:
+"NÃO PUBLICAR — [motivo]"
+É melhor não publicar do que publicar conteúdo fraco. A reputação do Simula Project depende da qualidade, não da quantidade."""
 
 # FIX 3.2 — Notas legais PT/UE para prompts de redes sociais
 NOTAS_LEGAIS_SOCIAL = """
-REGRAS LEGAIS OBRIGATORIAS (Portugal/UE):
-- Se mencionares produto cedido para review: incluir #OFERTA no inicio da legenda/post
-- Se incluires link de afiliado: indicar "link de afiliado — posso ganhar comissao"
-- NUNCA inventar claims de performance de hardware nao verificados
-- Cumprir Codigo da Publicidade Portugues (DL 330/90) + RGPD"""
+REGRAS LEGAIS OBRIGATÓRIAS (Portugal/UE):
+- Se mencionares produto cedido para review: incluir #OFERTA no início da legenda/post
+- Se incluíres link de afiliado: indicar "link de afiliado — posso ganhar comissão"
+- NUNCA inventar claims de performance de hardware não verificados
+- Cumprir Código da Publicidade Português (DL 330/90) + RGPD"""
 
-NOTA_IA_YOUTUBE = '"Este video utiliza narracao gerada por inteligencia artificial (IA). O conteudo informativo foi verificado pela equipa Simula Project."'
+NOTA_IA_YOUTUBE = '"Este vídeo utiliza narração gerada por inteligência artificial (IA). O conteúdo informativo foi verificado pela equipa Simula Project."'
 
 
 def _format_article_highlight(article, index):
