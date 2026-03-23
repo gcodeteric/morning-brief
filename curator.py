@@ -273,7 +273,48 @@ def _score_article(article):
             score -= 10
             break
 
+    # Engagement bonus preditivo (cap +10)
+    eng = _engagement_bonus(article)
+    if eng > 0:
+        score += eng
+        logger.debug("Engagement bonus +%d para: %s", eng, article.get("title", "")[:60])
+
     return max(min(score, 100), 0)
+
+
+def _engagement_bonus(article: dict) -> int:
+    """
+    Bonus de engagement preditivo. Cap: 10 pontos.
+    Baseado em sinais de título que correlacionam
+    com melhor performance editorial.
+    """
+    try:
+        title = article.get("title", "")
+        if not title:
+            return 0
+        bonus = 0
+        # Comprimento óptimo (50-70 chars performam melhor)
+        if 50 <= len(title) <= 70:
+            bonus += 3
+        # Números no título ("Top 5", "2026", "GT3")
+        if re.search(r'\d+', title):
+            bonus += 2
+        # Comparações
+        if any(kw in title.lower() for kw in
+               ["vs", "versus", "compared", "comparison",
+                "vs.", "against", "better than"]):
+            bonus += 3
+        # Nomes de pilotos conhecidos (sim racing + motorsport)
+        known_names = [
+            "verstappen", "norris", "leclerc", "hamilton",
+            "alonso", "sainz", "russell", "piastri",
+            "vandoorne", "de vries"
+        ]
+        if any(name in title.lower() for name in known_names):
+            bonus += 5
+        return min(bonus, 10)
+    except Exception:
+        return 0
 
 
 # FIX 2.6 — seen_links agora guarda metadata (ts, source, title)
