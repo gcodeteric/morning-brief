@@ -52,11 +52,12 @@ NOTA_IA_YOUTUBE = '"Este vídeo utiliza narração gerada por inteligência arti
 
 def _format_article_highlight(article, index):
     """Formata artigo como destaque (posicao 1-5)."""
-    emoji = CATEGORY_EMOJI.get(article["category"], "📰")
-    title = article["title"]
-    source = article["source"]
-    summary = article.get("summary", "")[:200]
-    link = article["link"]
+    category = article.get("category", "unknown")
+    emoji = CATEGORY_EMOJI.get(category, "📰")
+    title = article.get("title") or "Sem título"
+    source = article.get("source") or "Fonte desconhecida"
+    summary = (article.get("summary") or "")[:200]
+    link = article.get("link", "")
     score = article.get("score", 0)
 
     lines = [
@@ -74,18 +75,27 @@ def _format_article_highlight(article, index):
 
 def _format_article_compact(article, index):
     """Formata artigo compacto (posicao 6-15)."""
-    emoji = CATEGORY_EMOJI.get(article["category"], "📰")
-    return f"{index}. {emoji} **{article['title']}** — {article['source']} | [Link]({article['link']})"
+    category = article.get("category", "unknown")
+    emoji = CATEGORY_EMOJI.get(category, "📰")
+    title = article.get("title") or "Sem título"
+    source = article.get("source") or "Fonte desconhecida"
+    link = article.get("link", "")
+    return f"{index}. {emoji} **{title}** — {source} | [Link]({link})"
 
 
 def _generate_news_block(selected):
     """Gera bloco de texto com as 15 noticias para injectar nos prompts."""
     lines = []
     for i, a in enumerate(selected, 1):
-        lines.append(f"{i}. [{a['category'].upper()}] {a['title']} — {a['source']}")
-        if a.get("summary"):
-            lines.append(f"   Resumo: {a['summary'][:150]}")
-        lines.append(f"   Link: {a['link']}")
+        category = str(a.get("category") or "unknown").upper()
+        title = a.get("title") or "Sem título"
+        source = a.get("source") or "Fonte desconhecida"
+        summary = a.get("summary") or ""
+        link = a.get("link", "")
+        lines.append(f"{i}. [{category}] {title} — {source}")
+        if summary:
+            lines.append(f"   Resumo: {summary[:150]}")
+        lines.append(f"   Link: {link}")
         lines.append("")
     return "\n".join(lines)
 

@@ -9,11 +9,18 @@ Documentado aqui para não criar expectativas falsas.
 """
 
 import logging
+import unicodedata
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 DISCORD_MIN_SCORE = 35
+
+
+def _normalize_text(text):
+    """Normaliza texto para comparação simples e robusta."""
+    text = (text or "").lower()
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
 
 
 def _best_by_category(articles, category):
@@ -30,14 +37,18 @@ def _reddit_eligible(articles):
     - Não são YouTube Shorts
     - Sem linguagem claramente promocional no título
     """
-    promo_signals = ["oferta", "desconto", "compra", "sponsored", "ad:", "patrocinado"]
+    promo_signals = [
+        "oferta", "desconto", "disconto", "promo", "promocao",
+        "sponsored", "patrocinado", "affiliate", "afiliado",
+        "deal", "compra",
+    ]
     eligible = []
     for a in articles:
         link = a.get("link", "")
-        title_lower = a.get("title", "").lower()
+        title_normalized = _normalize_text(a.get("title", ""))
         score = a.get("score", 0)
         is_short = "youtube.com/shorts" in link
-        is_promo = any(p in title_lower for p in promo_signals)
+        is_promo = any(p in title_normalized for p in promo_signals)
         if not is_short and not is_promo and score >= 40:
             eligible.append(a)
     eligible.sort(key=lambda x: x.get("score", 0), reverse=True)
@@ -60,7 +71,11 @@ def _youtube_daily_candidate(articles):
         return a.get("score", 0) + kw_bonus
 
     candidates.sort(key=priority_score, reverse=True)
-    return candidates[0] if candidates else (articles[0] if articles else None)
+    if candidates:
+        return candidates[0]
+
+    logger.info("Planner: sem candidato válido para YouTube daily (todos eram Shorts ou lista vazia)")
+    return None
 
 
 def _pick_distinct_secondary(selected, primary):
@@ -109,6 +124,8 @@ def plan(curated):
     # Fallback: se não houver motorsport, usar melhor alternativa distinta
     if ig_moto is None:
         ig_moto = _pick_distinct_secondary(selected, ig_sim)
+        if ig_sim is not None and ig_moto is None and len(selected) == 1:
+            logger.info("Planner: apenas 1 artigo disponível — segundo slot IG/X fica vazio para evitar duplicação")
 
     # Protecção explícita contra duplicação; tenta alternativa antes de anular
     if ig_moto is not None and ig_moto == ig_sim:
