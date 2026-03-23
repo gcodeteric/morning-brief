@@ -11,3 +11,17 @@
 2026-03-23 10:34:48,531 - INFO -    \u2192 Arquivo guardado em C:\Users\berna\SimulaNewsMachine\archive\2026-03-23_brief.md
 2026-03-23 10:34:48,532 - INFO -    \u2192 run_summary.json actualizado
 2026-03-23 10:34:48,532 - INFO - === Concluído com sucesso ===
+2026-03-23 11:13:38,871 - INFO - === SimulaNewsMachine v2.1 iniciada ===
+2026-03-23 11:13:40,208 - INFO - Passo 1: Scanning feeds...
+2026-03-23 11:15:59,258 - INFO - Excluídos 15 artigos já vistos em briefs anteriores
+2026-03-23 11:15:59,258 - INFO - Scan completo: 57/57 feeds OK, 61 artigos
+2026-03-23 11:15:59,258 - INFO -    \u2192 61 artigos encontrados
+2026-03-23 11:15:59,258 - INFO - Passo 2: Curating...
+2026-03-23 11:15:59,262 - INFO - Dedup: 61 \u2192 60 artigos
+2026-03-23 11:15:59,266 - INFO -    \u2192 15 selecionados
+2026-03-23 11:15:59,266 - INFO - Passo 3: Formatting...
+2026-03-23 11:15:59,267 - INFO - Brief guardado em C:\Users\berna\Desktop\SIMULA_BRIEF_HOJE.md
+2026-03-23 11:15:59,267 - INFO -    \u2192 Brief guardado em C:\Users\berna\Desktop\SIMULA_BRIEF_HOJE.md
+2026-03-23 11:15:59,279 - INFO -    \u2192 Arquivo guardado em C:\Users\berna\Desktop\Simula_Project\morning-brief\archive\2026-03-23_brief.md
+2026-03-23 11:15:59,280 - INFO -    \u2192 run_summary.json actualizado
+2026-03-23 11:15:59,280 - INFO - === Concluído com sucesso ===

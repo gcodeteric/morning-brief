@@ -357,12 +357,12 @@ REGRAS:
     md.append("")
     md.append("## PROMPT 5 — DISCORD (2 posts)")
     md.append("")
-    md.append("```")
+    md.append("````")
     md.append(f"""Vais criar 2 posts para o servidor Discord do Simula Project. Usa formatação Discord markdown.
 
 CONTEXTO:
 - Servidor: Simula Project (comunidade portuguesa de sim racing)
-- Canais disponíveis: #notícias, #discussão, #hardware, #setups, #off-topic
+- Canais disponíveis: #noticias, #discussao, #hardware, #setups, #off-topic
 - Tom: casual, informativo, amigável. PT-PT.
 
 NOTÍCIAS DE HOJE ({data_str}):
@@ -371,34 +371,30 @@ NOTÍCIAS DE HOJE ({data_str}):
 TAREFA:
 Gera 2 posts Discord completos:
 
-**POST 1 — #notícias (notícia formatada):**
-```
-Canal: #notícias
-Formato Discord markdown com:
-- Emoji + título em bold
-- Resumo em 2-3 frases
-- Link original
-- Reacções sugeridas (emojis para o bot)
-- Tag de categoria
-```
+POST 1 — #noticias (notícia formatada):
+  Canal: #noticias
+  Formato Discord markdown com:
+  - Emoji + título em bold
+  - Resumo em 2-3 frases
+  - Link original
+  - Reacções sugeridas (emojis para o bot)
+  - Tag de categoria
 
-**POST 2 — #discussão (pergunta/tema casual):**
-```
-Canal: #discussão
-Formato:
-- Pergunta ou tema que gere conversa
-- Contexto breve (2-3 frases)
-- Poll sugerida (se aplicável)
-- Tom casual, como se fosses um membro do server
-```
+POST 2 — #discussao (pergunta/tema casual):
+  Canal: #discussao
+  Formato:
+  - Pergunta ou tema que gere conversa
+  - Contexto breve (2-3 frases)
+  - Poll sugerida (se aplicável)
+  - Tom casual, como se fosses um membro do server
 
 REGRAS:
 - PT-PT (português de Portugal)
-- Usar formatação Discord: **bold**, *itálico*, > quote, ```code```
+- Usar formatação Discord: **bold**, *itálico*, > quote
 - Emojis com moderação
 - Tom casual mas informativo
 - Não ser formal demais — é Discord, não email""")
-    md.append("```")
+    md.append("````")
     md.append("")
 
     # --- FOOTER ---

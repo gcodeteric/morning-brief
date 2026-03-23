@@ -29,7 +29,7 @@ Sistema automático que todas as manhãs te entrega um ficheiro no Desktop com a
 ### 3. Ir para a pasta do projeto
 
 ```
-cd C:\Users\berna\SimulaNewsMachine
+cd C:\Users\berna\Desktop\Simula_Project\morning-brief
 ```
 
 ### 4. Instalar dependências

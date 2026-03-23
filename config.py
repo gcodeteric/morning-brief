@@ -3,7 +3,7 @@ from pathlib import Path
 
 HOME = Path.home()
 DESKTOP = HOME / "Desktop"
-PROJECT_DIR = HOME / "SimulaNewsMachine"
+PROJECT_DIR = Path(__file__).resolve().parent
 OUTPUT_FILE = DESKTOP / "SIMULA_BRIEF_HOJE.md"
 ARCHIVE_DIR = PROJECT_DIR / "archive"
 LOG_DIR = PROJECT_DIR / "logs"

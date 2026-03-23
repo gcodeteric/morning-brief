@@ -130,7 +130,7 @@ def get_all_feeds():
     all_feeds = list(FEEDS)
 
     # Carregar feeds dinâmicos extraídos pelo channel_id_extractor.py
-    extracted_file = Path.home() / "SimulaNewsMachine" / "data" / "extracted_channel_ids.json"
+    extracted_file = Path(__file__).resolve().parent / "data" / "extracted_channel_ids.json"
     if extracted_file.exists():
         try:
             with open(extracted_file, "r", encoding="utf-8") as f:

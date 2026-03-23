@@ -15,7 +15,7 @@ if %ERRORLEVEL% neq 0 (
 
 REM Obter caminho absoluto do Python
 for /f "delims=" %%i in ('where python') do set PYTHON_PATH=%%i
-set WORK_DIR=C:\Users\%USERNAME%\SimulaNewsMachine
+set WORK_DIR=%~dp0
 
 REM Criar tarefa com caminho absoluto, working directory, e log redirect
 schtasks /create /tn "SimulaNewsMachine" ^

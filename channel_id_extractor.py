@@ -16,7 +16,7 @@ import requests
 
 from feeds import YOUTUBE_CHANNELS_TO_EXTRACT
 
-DATA_DIR = Path.home() / "SimulaNewsMachine" / "data"
+DATA_DIR = Path(__file__).resolve().parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = DATA_DIR / "extracted_channel_ids.json"
 

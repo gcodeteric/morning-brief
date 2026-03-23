@@ -192,7 +192,7 @@ def _score_article(article):
             score -= 10
             break
 
-    return max(score, 0)
+    return max(min(score, 100), 0)
 
 
 def _load_seen_links():
@@ -284,10 +284,14 @@ def curate_articles(articles):
         article["score"] = _score_article(article)
 
     # Bónus novidade de fonte pouco recorrente
-    source_counts = {}
-    for link, ts in seen_links.items():
-        # Não temos source nos seen_links, skip
-        pass
+    # Contar quantas vezes cada fonte aparece nos artigos já seleccionados anteriormente
+    selected_sources = {}
+    for article in deduped:
+        src = article["source"]
+        selected_sources[src] = selected_sources.get(src, 0) + 1
+    for article in deduped:
+        if selected_sources.get(article["source"], 0) <= 2:
+            article["score"] = min(article["score"] + 5, 100)
 
     # Ordenar por score desc
     deduped.sort(key=lambda a: a["score"], reverse=True)

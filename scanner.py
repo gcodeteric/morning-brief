@@ -4,11 +4,14 @@ SimulaNewsMachine — Scanner de feeds RSS.
 Lê todos os feeds, filtra por janela temporal, e retorna artigos crus.
 """
 
+import html
 import json
 import logging
+import re
 from datetime import datetime, timezone, timedelta
 
 import feedparser
+import requests
 from dateutil import parser as dateutil_parser
 
 from config import HOURS_LOOKBACK, FEED_TIMEOUT_SECONDS, SEEN_LINKS_FILE, SEEN_LINKS_MAX_AGE_HOURS
@@ -70,7 +73,15 @@ def _scan_single_feed(feed_info):
     articles = []
 
     try:
-        parsed = feedparser.parse(url)
+        # Usar requests com timeout real, depois feedparser para parsing
+        try:
+            resp = requests.get(url, timeout=FEED_TIMEOUT_SECONDS, headers={
+                "User-Agent": "SimulaNewsMachine/2.1"
+            })
+            parsed = feedparser.parse(resp.content)
+        except requests.exceptions.RequestException:
+            # Fallback para feedparser directo (alguns feeds precisam)
+            parsed = feedparser.parse(url)
 
         if not parsed.entries:
             logger.debug(f"Feed '{name}' sem entradas")
@@ -92,9 +103,9 @@ def _scan_single_feed(feed_info):
                 summary = entry["summary"]
             elif entry.get("description"):
                 summary = entry["description"]
-            # Limpar HTML básico e truncar
-            import re
+            # Limpar HTML tags, unescape entities, e truncar
             summary = re.sub(r"<[^>]+>", " ", summary)
+            summary = html.unescape(summary)
             summary = re.sub(r"\s+", " ", summary).strip()
             summary = summary[:300]
 
