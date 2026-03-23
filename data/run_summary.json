@@ -1,0 +1,19 @@
+{
+  "started_at": "2026-03-23T10:33:15.477418",
+  "ended_at": "2026-03-23T10:34:48.531894",
+  "feeds_total": 57,
+  "feeds_ok": 57,
+  "feeds_fail": 0,
+  "feeds_failed_names": [],
+  "articles_scanned": 75,
+  "articles_selected": 15,
+  "top_sources": [
+    "Boosted Media YT",
+    "OC Racing",
+    "OverTake.gg",
+    "SLAPTrain",
+    "aarava"
+  ],
+  "brief_file": "C:\\Users\\berna\\Desktop\\SIMULA_BRIEF_HOJE.md",
+  "status": "OK"
+}
