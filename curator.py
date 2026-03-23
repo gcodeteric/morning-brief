@@ -431,13 +431,34 @@ def curate_articles(articles):
             title_tokens_list.append(tokens)
 
     # ========================================================================
-    # Dedup camada 3: Cross-dia (seen_links.json) — FIX 2.6: por URL canónica
+    # Dedup camada 3: Cross-dia (seen_links.json) — por URL canónica + título
     # ========================================================================
     seen_links = _load_seen_links()
-    deduped = [
+    deduped_by_seen_url = [
         a for a in deduped_by_title
         if _canonicalize_url(a["link"]) not in seen_links
     ]
+
+    seen_title_tokens = {
+        link: _normalize_title(entry.get("title", ""))
+        for link, entry in seen_links.items()
+        if isinstance(entry, dict) and entry.get("title")
+    }
+
+    deduped = []
+    for article in deduped_by_seen_url:
+        tokens = _normalize_title(article["title"])
+        is_seen_title = False
+        for existing_tokens in seen_title_tokens.values():
+            if _title_similarity(tokens, existing_tokens) > 0.55:
+                logger.info(
+                    "Dedup cross-dia: '%s' similar a visto anteriormente",
+                    article["title"][:60],
+                )
+                is_seen_title = True
+                break
+        if not is_seen_title:
+            deduped.append(article)
 
     total_after = len(deduped)
     logger.info(f"Dedup: {total_before} -> {total_after} artigos")
