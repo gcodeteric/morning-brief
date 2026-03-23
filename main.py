@@ -119,6 +119,7 @@ def main():
                 a["source"] for a in curated["selected"][:8]
             ))[:5],
             "categories": curated.get("categories", {}),
+            "selected_by_category": curated.get("categories", {}),
             "brief_file": str(OUTPUT_FILE),
             "status": "OK",
         }
@@ -126,6 +127,14 @@ def main():
             json.dump(summary, f, indent=2, ensure_ascii=False)
 
         logging.info("   -> run_summary.json actualizado")
+
+        # Alertas operacionais (não crítico)
+        try:
+            from alerts import check_and_alert
+            check_and_alert(summary)
+        except Exception as e:
+            logging.warning(f"Alerts falharam (não crítico): {e}")
+
         logging.info("=== Concluido com sucesso ===")
 
     except Exception as e:
