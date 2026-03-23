@@ -414,6 +414,17 @@ def curate_articles(articles):
     deduped.sort(key=lambda a: a["score"], reverse=True)
 
     # ========================================================================
+    # Instrumentação nostalgia — observabilidade sem alterar seleção
+    # ========================================================================
+    _nostalgia_raw = [a for a in deduped if a.get("category") == "nostalgia"]
+    _nostalgia_above_threshold = [a for a in _nostalgia_raw if a.get("score", 0) >= MIN_RELEVANCE_SCORE]
+    logger.info(f"Curator: nostalgia raw candidates={len(_nostalgia_raw)}")
+    logger.info(f"Curator: nostalgia above threshold (>={MIN_RELEVANCE_SCORE})={len(_nostalgia_above_threshold)}")
+    if _nostalgia_raw and not _nostalgia_above_threshold:
+        top_score = max((a.get("score", 0) for a in _nostalgia_raw), default=0)
+        logger.info(f"Curator: nostalgia top score={top_score} (abaixo do threshold {MIN_RELEVANCE_SCORE})")
+
+    # ========================================================================
     # Garantir diversidade de categorias
     # ========================================================================
     selected = []
@@ -474,6 +485,16 @@ def curate_articles(articles):
 
     # Re-ordenar selecção por score
     selected.sort(key=lambda a: a["score"], reverse=True)
+
+    # Instrumentação nostalgia — resultado final
+    _nostalgia_selected = sum(1 for a in selected if a.get("category") == "nostalgia")
+    logger.info(f"Curator: nostalgia selected={_nostalgia_selected}")
+    if _nostalgia_selected == 0 and _nostalgia_above_threshold:
+        logger.info("Curator: nostalgia guarantee not filled — candidates existed but lost to source limits or fill order")
+    elif _nostalgia_selected == 0 and _nostalgia_raw:
+        logger.info("Curator: nostalgia guarantee not filled — no candidates above threshold")
+    elif _nostalgia_selected == 0:
+        logger.info("Curator: nostalgia guarantee not filled — no raw candidates after dedup")
 
     # ========================================================================
     # FIX 2.6 — Guardar seen_links por URL canónica com metadata
