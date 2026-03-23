@@ -34,6 +34,10 @@ GUARANTEE_PORTUGAL = True
 MAX_PER_SOURCE = 3  # Máximo de artigos por fonte no top 15
 MAX_PER_SOURCE_YOUTUBE = 1  # Máximo de artigos por canal YouTube por brief
 
+# Geração de social cards (requer Pillow + assets/)
+# Mudar para True depois de colocar fontes e logo em assets/
+GENERATE_IMAGES = False
+
 # Criar pastas se não existirem
 for d in [LOG_DIR, ARCHIVE_DIR, OUTPUT_DIR, DATA_DIR]:
     d.mkdir(parents=True, exist_ok=True)

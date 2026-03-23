@@ -9,7 +9,9 @@ from datetime import datetime
 
 from config import (
     LOG_DIR, ARCHIVE_DIR, OUTPUT_FILE, RUN_SUMMARY_FILE, DATA_DIR,
+    GENERATE_IMAGES,
 )
+from planner import plan as run_planner
 
 # FIX B.1 — Instance locking
 LOCK_FILE = DATA_DIR / "instance.lock"
@@ -73,9 +75,27 @@ def main():
         curated = curate_articles(raw)
         logging.info(f"   -> {len(curated['selected'])} selecionados")
 
+        # Plan (não crítico — formatter tem fallback interno)
+        logging.info("Passo 3: Planning...")
+        editorial_plan = None
+        try:
+            editorial_plan = run_planner(curated)
+        except Exception as e:
+            logging.warning(f"Planner falhou (não crítico): {e}")
+
+        # Cards (import lazy — depende de Pillow/assets opcionais)
+        card_paths = {}
+        if GENERATE_IMAGES:
+            try:
+                from card_generator import generate_instagram_cards
+                card_paths = generate_instagram_cards(editorial_plan or {})
+                logging.info(f"   -> {len(card_paths)} cards gerados")
+            except Exception as e:
+                logging.warning(f"Card generator falhou (não crítico): {e}")
+
         # Format
-        logging.info("Passo 3: Formatting...")
-        format_brief(curated, OUTPUT_FILE)
+        logging.info("Passo 4: Formatting...")
+        format_brief(curated, OUTPUT_FILE, plan=editorial_plan, card_paths=card_paths)
         logging.info(f"   -> Brief guardado em {OUTPUT_FILE}")
 
         # Archive

@@ -90,7 +90,7 @@ def _generate_news_block(selected):
     return "\n".join(lines)
 
 
-def format_brief(curated, output_path):
+def format_brief(curated, output_path, plan=None, card_paths=None):
     """Gera o ficheiro .md completo com brief + 5 prompts."""
     selected = curated["selected"]
     categories = curated["categories"]
@@ -103,6 +103,22 @@ def format_brief(curated, output_path):
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
 
     news_block = _generate_news_block(selected)
+    if plan is None:
+        # Fallback genérico de compatibilidade: mantém o brief funcional
+        # mesmo sem planner. Não representa seleção editorial real por canal.
+        plan = {
+            "instagram_sim_racing": selected[0] if selected else None,
+            "instagram_motorsport": selected[1] if len(selected) > 1 else None,
+            "x_thread_1": selected[0] if selected else None,
+            "x_thread_2": selected[1] if len(selected) > 1 else None,
+            "youtube_daily": selected[0] if selected else None,
+            "youtube_weekly": selected[:5],
+            "reddit_candidates": selected[:3],
+            "discord_post": selected[0] if selected else None,
+            "is_sunday": datetime.now().weekday() == 6,
+        }
+    if card_paths is None:
+        card_paths = {}
 
     # ========================================================================
     # CONSTRUIR O MARKDOWN
@@ -145,294 +161,239 @@ def format_brief(curated, output_path):
     md.append("")
 
     # ====================================================================
-    # SECÇÃO 2: 5 PROMPTS
+    # SECÇÃO 2: PROMPTS EDITORIAIS v3
     # ====================================================================
+    ig_sim      = plan.get("instagram_sim_racing")
+    ig_moto     = plan.get("instagram_motorsport")
+    x1          = plan.get("x_thread_1")
+    x2          = plan.get("x_thread_2")
+    yt          = plan.get("youtube_daily")
+    reddit_arts = plan.get("reddit_candidates", [])
+    discord_art = plan.get("discord_post")
+    is_sunday   = plan.get("is_sunday", False)
+
+    card_sim_path  = card_paths.get("sim_racing",  "Desktop/SIMULA_CARDS_HOJE/card_01_sim_racing.png")
+    card_moto_path = card_paths.get("motorsport",  "Desktop/SIMULA_CARDS_HOJE/card_02_motorsport.png")
+
+    ig_manha = "Carrossel" if now.weekday() % 2 == 0 else "Reel"
+    ig_tarde = "Reel"      if now.weekday() % 2 == 0 else "Carrossel"
+
+    reddit_block = _generate_news_block(reddit_arts) if reddit_arts else "Sem artigos elegíveis hoje."
+
     md.append("---")
     md.append("")
     md.append("# 🚀 PROMPTS PARA REDES SOCIAIS")
     md.append("")
-    md.append("*Copia cada prompt abaixo e cola directamente no Claude Sonnet.*")
+    md.append("*Copia cada prompt e cola directamente no Claude Sonnet.*")
     md.append("")
 
-    # ----------------------------------------------------------------
-    # PROMPT 1 — INSTAGRAM + X/TWITTER
-    # ----------------------------------------------------------------
-    ig_manha = "Carrossel" if now.weekday() % 2 == 0 else "Reel"
-    ig_tarde = "Reel" if now.weekday() % 2 == 0 else "Carrossel"
-    ig_manha_desc = (
-        "Se carrossel: 5-7 slides, texto para cada slide, CTA no ultimo"
-        if now.weekday() % 2 == 0 else
-        "Se reel: conceito visual, texto overlay por seccao (3-5 seccoes), duracao ~30s"
-    )
-    ig_tarde_desc = (
-        "Se reel: conceito visual, texto overlay por seccao (3-5 seccoes), duracao ~30s"
-        if now.weekday() % 2 == 0 else
-        "Se carrossel: 5-7 slides, texto para cada slide, CTA no ultimo"
-    )
-
+    # ── PROMPT 1: INSTAGRAM ──────────────────────────────────────────────
     md.append("---")
     md.append("")
-    md.append("## PROMPT 1 — INSTAGRAM + X/TWITTER")
+    md.append("## PROMPT 1 — INSTAGRAM (2 posts com imagem)")
     md.append("")
     md.append("````")
-    md.append(f"""Es o social media manager do Simula Project — o primeiro operador integrado de sim racing em Portugal. O teu tom e: inteligente, com humor subtil, educativo, sempre em PT-PT (portugues de Portugal). NUNCA vendes directamente. Crias conteudo que faz a comunidade querer seguir-te.
+    md.append(f"""És o social media manager do Simula Project — o primeiro operador integrado de sim racing em Portugal.
+Tom: inteligente, humor subtil, educativo. PT-PT. NUNCA vendas directamente.
 
 CONTEXTO DA MARCA:
-- Nome: Simula Project
-- Posicionamento: Hub de sim racing, motorsport real, hardware, racing games e simuladores nostalgicos (ETS2, FS25, MSFS)
-- Tom: Inteligente, humor subtil, educativo. Nunca corporativo. Nunca vendas.
-- Idioma: PT-PT (portugues de Portugal)
+- Simula Project: hub de sim racing, motorsport, hardware, racing games e simuladores nostálgicos
+- Idioma: PT-PT (português de Portugal)
+- Imagens branded já geradas em:
+  POST 1: {card_sim_path}
+  POST 2: {card_moto_path}
 
-NOTICIAS DE HOJE ({data_str}):
-{news_block}
+POST 1 — SIM RACING (publicar 09:00):
+Notícia: {ig_sim['title'] if ig_sim else 'N/A'}
+Fonte: {ig_sim['source'] if ig_sim else 'N/A'}
+Resumo: {ig_sim.get('summary', '')[:200] if ig_sim else ''}
+Link: {ig_sim['link'] if ig_sim else ''}
 
-TAREFA:
-Gera exactamente 4 posts usando 4 noticias DISTINTAS da lista acima:
+POST 2 — MOTORSPORT (publicar 18:00):
+Notícia: {ig_moto['title'] if ig_moto else 'N/A'}
+Fonte: {ig_moto['source'] if ig_moto else 'N/A'}
+Resumo: {ig_moto.get('summary', '')[:200] if ig_moto else ''}
+Link: {ig_moto['link'] if ig_moto else ''}
 
-1. **IG Post 1 (manha, 09:00) — {ig_manha}:**
-   - {ig_manha_desc}
-   - Caption completa com hook forte na primeira linha
-   - 15-20 hashtags relevantes (mix PT + EN)
-
-2. **IG Post 2 (tarde, 18:00) — {ig_tarde}:**
-   - {ig_tarde_desc}
-   - Caption completa com hook forte
-   - 15-20 hashtags
-
-3. **X Post 1 (manha, 09:30) — Thread ou tweet com imagem:**
-   - Se thread: 3-5 tweets encadeados, primeiro tweet e hook
-   - Se tweet unico: texto + descricao da imagem a criar
-   - 2-3 hashtags maximo
-
-4. **X Post 2 (tarde, 18:30) — Take/reaccao:**
-   - Opiniao ou reaccao a uma noticia
-   - Tom conversacional, convida a discussao
-   - 2-3 hashtags maximo
+TAREFA — Para CADA post gera:
+1. Caption completa (hook forte primeira linha, máx 2200 chars)
+2. POST 1 — formato {ig_manha}: {"5-7 slides, texto por slide, CTA no último" if ig_manha == "Carrossel" else "conceito visual, texto overlay 3-5 secções, ~30s"}
+   POST 2 — formato {ig_tarde}: {"conceito visual, texto overlay 3-5 secções, ~30s" if ig_tarde == "Reel" else "5-7 slides, texto por slide, CTA no último"}
+3. 15-20 hashtags por post (mix PT + EN, específicas do tema)
 
 REGRAS:
-- Usa 4 noticias DISTINTAS (uma por post)
-- Minimo 1 noticia de Nostalgia ou Racing Games se houver na lista
-- Cada post deve ter valor standalone (alguem que ve so esse post entende)
-- Inclui emojis com moderacao (nao exagerar)
-- Os hashtags devem ser relevantes e misturar PT + EN
+- Cada post tem valor standalone
+- Emojis com moderação
+- Nunca preços, nunca venda directa
 {NOTAS_LEGAIS_SOCIAL}
 {REGRA_NAO_PUBLICAR}""")
     md.append("````")
     md.append("")
 
-    # ----------------------------------------------------------------
-    # PROMPT 2 — YOUTUBE SHORT (60s faceless)
-    # ----------------------------------------------------------------
+    # ── PROMPT 2: X/TWITTER ──────────────────────────────────────────────
     md.append("---")
     md.append("")
-    md.append("## PROMPT 2 — YOUTUBE SHORT (60s faceless)")
+    md.append("## PROMPT 2 — X/TWITTER (2 threads)")
     md.append("")
     md.append("````")
-    md.append(f"""Es o produtor de conteudo do Simula Project — o primeiro operador integrado de sim racing em Portugal. Vais criar um YouTube Short faceless (sem rosto, so gameplay/imagens + voiceover).
+    md.append(f"""És o gestor de X/Twitter do Simula Project.
+Tom: directo, opinativo, convida à discussão. PT-PT. Sem imagens. Texto + link.
 
-CONTEXTO DA MARCA:
-- Nome: Simula Project
-- Canal YouTube focado em sim racing, motorsport, hardware, racing games e simuladores
-- Tom: Informativo, dinamico, com personalidade. PT-PT.
-- Formato: Faceless (gameplay footage + voiceover gerado por IA)
+THREAD 1 — SIM RACING (publicar 09:30):
+Notícia: {x1['title'] if x1 else 'N/A'}
+Link original: {x1['link'] if x1 else ''}
 
-NOTICIAS DE HOJE ({data_str}):
-{news_block}
+THREAD 2 — MOTORSPORT (publicar 18:30):
+Notícia: {x2['title'] if x2 else 'N/A'}
+Link original: {x2['link'] if x2 else ''}
+
+TAREFA — Para CADA notícia, gera thread de 3 tweets:
+- Tweet 1: Hook forte (máx 280 chars). SEM LINK.
+- Tweet 2: Contexto ou opinião (máx 280 chars). SEM LINK.
+- Tweet 3: Pergunta aberta à comunidade + link original + máx 3 hashtags
+
+REGRAS:
+- Link APENAS no tweet 3 (X penaliza links no tweet 1)
+- Tom conversacional, não corporativo
+{REGRA_NAO_PUBLICAR}""")
+    md.append("````")
+    md.append("")
+
+    # ── PROMPT 3: YOUTUBE SHORT ───────────────────────────────────────────
+    md.append("---")
+    md.append("")
+    md.append("## PROMPT 3 — YOUTUBE SHORT (~60s)")
+    md.append("")
+    md.append("````")
+    md.append(f"""És o produtor de conteúdo do Simula Project.
+Vais criar um YouTube Short faceless (~60 segundos). PT-PT.
+
+NOTÍCIA SELECCIONADA:
+{yt['title'] if yt else 'N/A'} — {yt['source'] if yt else ''}
+Resumo: {yt.get('summary', '')[:200] if yt else ''}
+Link: {yt['link'] if yt else ''}
 
 TAREFA:
-Escolhe a noticia com maior potencial viral da lista acima e gera TUDO para um YouTube Short de ~60 segundos:
-
-1. **3 opcoes de titulo** (max 60 chars cada, com emoji, clickbait inteligente)
-
-2. **Script de voiceover** (~150 palavras em PT-PT, pensado para ser lido pelo NotebookLLM):
-   - Hook nos primeiros 3 segundos
-   - Informacao clara e concisa
-   - Fecho com CTA subtil ("subscreve para mais")
-
-3. **Plano visual segundo a segundo:**
-   - 0-3s: [o que aparece]
-   - 3-10s: [o que aparece]
-   - (continuar ate 60s)
-
-4. **Gameplay/footage necessario:** lista exacta do que filmar ou onde encontrar footage
-
-5. **Thumbnail concept:** descricao detalhada (texto, cores, layout)
-
-6. **Descricao YouTube** (com a nota obrigatoria abaixo)
-
-7. **20 tags YouTube** (mix PT + EN)
-
-8. **Musica sugerida:** estilo/mood para biblioteca YouTube gratuita
+1. 3 opções de título (máx 60 chars, emoji, hook forte)
+2. Script voiceover (~150 palavras PT-PT, hook nos primeiros 3s, CTA subtil no fim)
+3. Plano visual segundo a segundo (0s → 60s)
+4. Lista de footage necessário
+5. Thumbnail concept (texto, cores, layout)
+6. Descrição YouTube com nota IA obrigatória
+7. 20 tags YouTube (mix PT + EN)
+8. Mood musical sugerido (biblioteca gratuita YouTube)
 
 NOTA OBRIGATÓRIA NA DESCRIÇÃO:
 {NOTA_IA_YOUTUBE}
 {NOTAS_LEGAIS_SOCIAL}
-{REGRA_NAO_PUBLICAR}
-
-REGRAS:
-- Maximo 60 segundos
-- Primeiro 3 segundos sao TUDO (hook visual + auditivo forte)
-- Sem rosto, sem webcam
-- Voiceover deve soar natural e informativo""")
+{REGRA_NAO_PUBLICAR}""")
     md.append("````")
     md.append("")
 
-    # ----------------------------------------------------------------
-    # PROMPT 3 — YOUTUBE LONGO (8-15 min faceless)
-    # ----------------------------------------------------------------
-    md.append("---")
-    md.append("")
-    md.append("## PROMPT 3 — YOUTUBE LONGO (8-15 min faceless)")
-    md.append("")
-    md.append("````")
-    md.append(f"""Es o produtor de conteudo do Simula Project — o primeiro operador integrado de sim racing em Portugal. Vais criar um video YouTube longo faceless (8-15 minutos, sem rosto, gameplay + voiceover).
+    # ── PROMPT 4: YOUTUBE SEMANAL (só ao domingo) ─────────────────────────
+    if is_sunday:
+        yt_weekly = plan.get("youtube_weekly", [])
+        weekly_block = _generate_news_block(yt_weekly)
+        md.append("---")
+        md.append("")
+        md.append("## PROMPT 4 — YOUTUBE SEMANAL (8-12 min) 📅 DOMINGO")
+        md.append("")
+        md.append("*NOTA: os artigos abaixo são os top 5 de hoje como proxy semanal.*")
+        md.append("*Quando a memória semanal real estiver implementada, este bloco será actualizado.*")
+        md.append("")
+        md.append("````")
+        md.append(f"""És o produtor de conteúdo do Simula Project.
+Vais criar o RESUMO SEMANAL de sim racing — vídeo YouTube faceless 8-12 minutos. PT-PT.
 
-CONTEXTO DA MARCA:
-- Nome: Simula Project
-- Canal YouTube focado em sim racing, motorsport, hardware, racing games e simuladores
-- Tom: Informativo, profundo, com personalidade. PT-PT.
-- Formato: Faceless (gameplay footage + voiceover gerado por IA)
-
-NOTICIAS DE HOJE ({data_str}):
-{news_block}
+MELHORES NOTÍCIAS DA SEMANA ({data_str}):
+{weekly_block}
 
 TAREFA:
-Analisa as noticias acima e escolhe o melhor tema para um video longo. Formatos possiveis:
-- Review / Analise aprofundada
-- Comparacao (A vs B)
-- Top 5 / Top 10
-- Guia / Tutorial
-- Resumo semanal de noticias
-
-Gera TUDO:
-
-1. **Formato escolhido e justificacao** (1-2 frases)
-
-2. **3 opcoes de titulo** (max 70 chars, SEO-friendly, com emoji)
-
-3. **Script de voiceover COMPLETO com timestamps:**
-   - [00:00] Intro + Hook (30s)
-   - [00:30] Contexto (1-2 min)
-   - [02:30] Seccao principal (dividir em 3-5 blocos)
-   - [XX:XX] Conclusao + CTA
-   - Total: ~1500-2000 palavras em PT-PT
-
-4. **Plano de filmagem por seccao:**
-   - Que gameplay/footage usar em cada parte
-   - Transicoes sugeridas
-   - Momentos para B-roll
-
-5. **3 thumbnail concepts:** texto, cores, layout, emocao
-
-6. **Descricao YouTube SEO** (com timestamps, links, nota IA)
-
-7. **20 tags YouTube** (mix PT + EN, SEO-optimized)
-
-8. **Cards e End Screen:** quando inserir e para que videos/playlists
+1. Tema central da semana (1 frase que resume o que aconteceu)
+2. 3 opções de título (máx 70 chars, SEO, emoji)
+3. Script completo com timestamps:
+   [00:00] Intro "Esta semana em sim racing..." (30s)
+   [00:30] Notícia mais importante (2-3 min)
+   [03:00] Segunda notícia (1-2 min)
+   [05:00] Terceira notícia (1-2 min)
+   [07:00] Hardware/Reviews da semana (1-2 min)
+   [09:00] O que vem aí — próxima semana (30s)
+   [09:30] CTA + subscrição
+   Total: ~1800-2200 palavras PT-PT
+4. Plano de footage por secção
+5. 3 thumbnail concepts
+6. Descrição YouTube SEO com timestamps
+7. 20 tags (mix PT + EN)
 
 NOTA OBRIGATÓRIA NA DESCRIÇÃO:
 {NOTA_IA_YOUTUBE}
 {NOTAS_LEGAIS_SOCIAL}
-{REGRA_NAO_PUBLICAR}
+{REGRA_NAO_PUBLICAR}""")
+        md.append("````")
+        md.append("")
 
-REGRAS:
-- 8-15 minutos (sweet spot YouTube)
-- Estrutura clara com timestamps
-- Hook nos primeiros 30 segundos
-- Cada seccao deve ter valor (nao encher)
-- Pensar em SEO no titulo, descricao e tags""")
-    md.append("````")
-    md.append("")
-
-    # ----------------------------------------------------------------
-    # PROMPT 4 — REDDIT (2 posts)
-    # ----------------------------------------------------------------
+    # ── PROMPT 5: REDDIT ─────────────────────────────────────────────────
     md.append("---")
     md.append("")
-    md.append("## PROMPT 4 — REDDIT (2 posts)")
+    md.append("## PROMPT 5 — REDDIT (1-3 posts)")
     md.append("")
     md.append("````")
-    md.append(f"""Vais criar 2 posts para Reddit sobre sim racing. ATENCAO: ZERO mencao ao Simula Project. Estes posts sao contribuicoes genuinas para a comunidade.
+    md.append(f"""Vais criar posts Reddit sobre sim racing.
+ZERO menção ao Simula Project. Contribuições genuínas à comunidade. Tudo em INGLÊS.
 
-NOTICIAS DE HOJE ({data_str}):
-{news_block}
+NOTÍCIAS ELEGÍVEIS (score alto, sem shorts, sem conteúdo promocional):
+{reddit_block}
 
-TAREFA:
-Gera 2 posts Reddit completos:
+{"TAREFA — Para cada notícia elegível (máx 3), escolhe o tipo mais adequado:" if reddit_arts else "HOJE NÃO HÁ ARTIGOS COM SUBSTÂNCIA SUFICIENTE PARA REDDIT. Não publicar."}
 
-**POST 1 — Link post com novidade (r/simracing ou sub mais adequado):**
-- Subreddit recomendado (r/simracing, r/iRacing, r/assettocorsa, r/granturismo, r/trucksim, etc.)
-- Titulo (seguir convencoes do sub — nao clickbait)
-- Link original da noticia
-- Comentario inicial do OP (2-3 frases em ingles, dar contexto ou opiniao)
+TIPO A — Link Post:
+- Subreddit mais adequado (r/simracing, r/iRacing, r/assettocorsa, r/granturismo, r/trucksim, etc.)
+- Título informativo, não clickbait
+- Link original da notícia
+- Comentário do OP: 2-3 frases em inglês com contexto genuíno
 
-**POST 2 — Discussion post (self post):**
-- Subreddit recomendado
-- Titulo (pergunta ou tema de discussao)
-- Corpo do post (3-5 paragrafos em ingles):
-  - Contexto da discussao
-  - A tua perspectiva/experiencia
-  - Pergunta aberta para a comunidade
+TIPO B — Discussion Post (se gerar debate):
+- Subreddit mais adequado
+- Título como pergunta ou tema de discussão
+- Corpo: contexto + perspectiva pessoal + pergunta aberta
 - Flair sugerida
 
-REGRAS:
-- Tudo em INGLES (Reddit internacional)
-- ZERO mencao ao Simula Project, zero auto-promocao
-- Tom: membro genuino da comunidade
-- Seguir etiqueta de cada subreddit
-- Nao ser clickbait no titulo
-- Adicionar valor real a discussao
-{NOTAS_LEGAIS_SOCIAL}
+REGRAS: inglês, zero auto-promoção, tom de membro genuíno da comunidade
 {REGRA_NAO_PUBLICAR}""")
     md.append("````")
     md.append("")
 
-    # ----------------------------------------------------------------
-    # PROMPT 5 — DISCORD (2 posts)
-    # ----------------------------------------------------------------
+    # ── PROMPT 6: DISCORD ────────────────────────────────────────────────
     md.append("---")
     md.append("")
-    md.append("## PROMPT 5 — DISCORD (2 posts)")
+    md.append("## PROMPT 6 — DISCORD")
     md.append("")
     md.append("````")
-    md.append(f"""Vais criar 2 posts para o servidor Discord do Simula Project. Usa formatacao Discord markdown.
+    if discord_art:
+        cat_label = discord_art.get("category", "").upper().replace("_", " ")
+        md.append(f"""Vais criar 1 post para o servidor Discord do Simula Project.
+Formatação Discord markdown. PT-PT. Tom casual e amigável.
 
-CONTEXTO:
-- Servidor: Simula Project (comunidade portuguesa de sim racing)
-- Canais disponiveis: #noticias, #discussao, #hardware, #setups, #off-topic
-- Tom: casual, informativo, amigavel. PT-PT.
+CANAL: #noticias-dia
 
-NOTICIAS DE HOJE ({data_str}):
-{news_block}
+NOTÍCIA:
+{discord_art['title']} — {discord_art['source']}
+Resumo: {discord_art.get('summary', '')[:200]}
+Link: {discord_art['link']}
 
-TAREFA:
-Gera 2 posts Discord completos:
-
-POST 1 — #noticias (noticia formatada):
-  Canal: #noticias
-  Formato Discord markdown com:
-  - Emoji + titulo em bold
-  - Resumo em 2-3 frases
-  - Link original
-  - Reaccoes sugeridas (emojis para o bot)
-  - Tag de categoria
-
-POST 2 — #discussao (pergunta/tema casual):
-  Canal: #discussao
-  Formato:
-  - Pergunta ou tema que gere conversa
-  - Contexto breve (2-3 frases)
-  - Poll sugerida (se aplicavel)
-  - Tom casual, como se fosses um membro do server
+FORMATO OBRIGATÓRIO:
+> 📰 **[{cat_label}] {discord_art['title']}**
+> [resumo em 2-3 frases claras e directas]
+> 🔗 {discord_art['link']}
+Reacções sugeridas: [3 emojis relevantes para o tema]
 
 REGRAS:
-- PT-PT (portugues de Portugal)
-- Usar formatacao Discord: **bold**, *italico*, > quote
-- Emojis com moderacao
-- Tom casual mas informativo
-- Nao ser formal demais — e Discord, nao email
-{NOTAS_LEGAIS_SOCIAL}
+- **bold** para títulos, > para quote block, *itálico* para destaques
+- Emojis com moderação
+- Tom casual — é Discord, não email
 {REGRA_NAO_PUBLICAR}""")
+    else:
+        md.append("DISCORD — SILÊNCIO HOJE\nNenhum artigo atingiu o threshold mínimo de qualidade. Não publicar.")
     md.append("````")
     md.append("")
 

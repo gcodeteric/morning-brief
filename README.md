@@ -125,3 +125,23 @@ morning-brief\
 ├── logs\                    ← Logs diários
 └── archive\                 ← Arquivo de briefs anteriores
 ```
+
+## Assets necessários para social cards
+
+Pasta `assets/` já criada. Colocar antes de activar `GENERATE_IMAGES = True`:
+
+| Ficheiro                  | Obrigatório | Uso                              |
+|---------------------------|-------------|----------------------------------|
+| logo-watermark.png        | ✅ Sim      | Watermark nos cards (PNG alpha)  |
+| BarlowCondensed-Bold.ttf  | ✅ Sim      | Fonte headlines                  |
+| Barlow-Regular.ttf        | ✅ Sim      | Fonte texto secundário           |
+
+Os logos do projecto (logo-primary.png, etc.) estão em assets/ mas
+não são necessários para os cards desta fase — apenas logo-watermark.png.
+
+Fontes gratuitas: https://fonts.google.com/specimen/Barlow+Condensed
+
+Quando pronto:
+1. Colocar os 3 ficheiros obrigatórios em assets/
+2. Definir GENERATE_IMAGES = True em config.py
+3. pip install Pillow
