@@ -214,16 +214,16 @@ CONTEXTO DA MARCA:
   POST 2: {card_moto_path}
 
 POST 1 — SIM RACING (publicar 09:00):
-Notícia: {ig_sim['title'] if ig_sim else 'N/A'}
-Fonte: {ig_sim['source'] if ig_sim else 'N/A'}
+Notícia: {ig_sim.get('title', 'N/A') if ig_sim else 'N/A'}
+Fonte: {ig_sim.get('source', 'N/A') if ig_sim else 'N/A'}
 Resumo: {ig_sim.get('summary', '')[:200] if ig_sim else ''}
-Link: {ig_sim['link'] if ig_sim else ''}
+Link: {ig_sim.get('link', '') if ig_sim else ''}
 
 POST 2 — MOTORSPORT (publicar 18:00):
-Notícia: {ig_moto['title'] if ig_moto else 'N/A'}
-Fonte: {ig_moto['source'] if ig_moto else 'N/A'}
+Notícia: {ig_moto.get('title', 'N/A') if ig_moto else 'N/A'}
+Fonte: {ig_moto.get('source', 'N/A') if ig_moto else 'N/A'}
 Resumo: {ig_moto.get('summary', '')[:200] if ig_moto else ''}
-Link: {ig_moto['link'] if ig_moto else ''}
+Link: {ig_moto.get('link', '') if ig_moto else ''}
 
 TAREFA — Para CADA post gera:
 1. Caption completa (hook forte primeira linha, máx 2200 chars)
@@ -250,12 +250,12 @@ REGRAS:
 Tom: directo, opinativo, convida à discussão. PT-PT. Sem imagens. Texto + link.
 
 THREAD 1 — SIM RACING (publicar 09:30):
-Notícia: {x1['title'] if x1 else 'N/A'}
-Link original: {x1['link'] if x1 else ''}
+Notícia: {x1.get('title', 'N/A') if x1 else 'N/A'}
+Link original: {x1.get('link', '') if x1 else ''}
 
 THREAD 2 — MOTORSPORT (publicar 18:30):
-Notícia: {x2['title'] if x2 else 'N/A'}
-Link original: {x2['link'] if x2 else ''}
+Notícia: {x2.get('title', 'N/A') if x2 else 'N/A'}
+Link original: {x2.get('link', '') if x2 else ''}
 
 TAREFA — Para CADA notícia, gera thread de 3 tweets:
 - Tweet 1: Hook forte (máx 280 chars). SEM LINK.
@@ -279,9 +279,9 @@ REGRAS:
 Vais criar um YouTube Short faceless (~60 segundos). PT-PT.
 
 NOTÍCIA SELECCIONADA:
-{yt['title'] if yt else 'N/A'} — {yt['source'] if yt else ''}
+{yt.get('title', 'N/A') if yt else 'N/A'} — {yt.get('source', '') if yt else ''}
 Resumo: {yt.get('summary', '')[:200] if yt else ''}
-Link: {yt['link'] if yt else ''}
+Link: {yt.get('link', '') if yt else ''}
 
 TAREFA:
 1. 3 opções de título (máx 60 chars, emoji, hook forte)
@@ -387,14 +387,14 @@ Formatação Discord markdown. PT-PT. Tom casual e amigável.
 CANAL: #noticias-dia
 
 NOTÍCIA:
-{discord_art['title']} — {discord_art['source']}
+{discord_art.get('title', 'N/A')} — {discord_art.get('source', 'N/A')}
 Resumo: {discord_art.get('summary', '')[:200]}
-Link: {discord_art['link']}
+Link: {discord_art.get('link', '')}
 
 FORMATO OBRIGATÓRIO:
-> 📰 **[{cat_label}] {discord_art['title']}**
+> 📰 **[{cat_label}] {discord_art.get('title', 'N/A')}**
 > [resumo em 2-3 frases claras e directas]
-> 🔗 {discord_art['link']}
+> 🔗 {discord_art.get('link', '')}
 Reacções sugeridas: [3 emojis relevantes para o tema]
 
 REGRAS:
