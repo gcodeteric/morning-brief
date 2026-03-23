@@ -80,11 +80,45 @@ def _load_font(path, size):
             return ImageFont.load_default()
 
 
+def _ensure_logo_alpha(logo):
+    """
+    Se o logo não tiver canal alpha útil (ex: RGB convertido para RGBA),
+    detecta fundo branco/quase branco e torna-o transparente.
+    Pixels mais escuros (a forma do logo) ficam com alpha proporcional.
+    Se já tiver alpha real, preserva-o.
+    """
+    logo = logo.convert("RGBA")
+    data = list(logo.getdata())
+
+    # Verificar se já tem alpha útil (pelo menos 5% de pixels não-opacos)
+    non_opaque = sum(1 for _, _, _, a in data if a < 250)
+    if non_opaque > len(data) * 0.05:
+        return logo
+
+    # Sem alpha útil — converter brightness para alpha.
+    # Fundo branco (>=250) → transparente. Logo (mais escuro) → visível.
+    new_data = []
+    for r, g, b, _ in data:
+        brightness = (r + g + b) / 3
+        if brightness >= 250:
+            # Fundo — totalmente transparente
+            new_data.append((r, g, b, 0))
+        else:
+            # Logo — mapear: quanto mais escuro, mais opaco
+            # 215 → alpha ~180, 240 → alpha ~60
+            alpha = int(255 * (1 - (brightness - 100) / 155)) if brightness > 100 else 255
+            alpha = max(0, min(255, alpha))
+            new_data.append((r, g, b, alpha))
+    logo.putdata(new_data)
+    return logo
+
+
 def _load_watermark(max_size=130):
     if not LOGO_WATERMARK.exists():
         return None
     try:
-        logo = Image.open(LOGO_WATERMARK).convert("RGBA")
+        logo = Image.open(LOGO_WATERMARK)
+        logo = _ensure_logo_alpha(logo)
         logo.thumbnail((max_size, max_size), Image.LANCZOS)
         return logo
     except Exception:
