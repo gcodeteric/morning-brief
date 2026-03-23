@@ -1,57 +1,28 @@
-2026-03-23 10:33:15,478 - INFO - === SimulaNewsMachine v2.1 iniciada ===
-2026-03-23 10:33:16,000 - INFO - Passo 1: Scanning feeds...
-2026-03-23 10:34:48,509 - INFO - Scan completo: 57/57 feeds OK, 75 artigos
-2026-03-23 10:34:48,509 - INFO -    \u2192 75 artigos encontrados
-2026-03-23 10:34:48,509 - INFO - Passo 2: Curating...
-2026-03-23 10:34:48,513 - INFO - Dedup: 75 \u2192 73 artigos
-2026-03-23 10:34:48,516 - INFO -    \u2192 15 selecionados
-2026-03-23 10:34:48,516 - INFO - Passo 3: Formatting...
-2026-03-23 10:34:48,519 - INFO - Brief guardado em C:\Users\berna\Desktop\SIMULA_BRIEF_HOJE.md
-2026-03-23 10:34:48,520 - INFO -    \u2192 Brief guardado em C:\Users\berna\Desktop\SIMULA_BRIEF_HOJE.md
-2026-03-23 10:34:48,531 - INFO -    \u2192 Arquivo guardado em C:\Users\berna\SimulaNewsMachine\archive\2026-03-23_brief.md
-2026-03-23 10:34:48,532 - INFO -    \u2192 run_summary.json actualizado
-2026-03-23 10:34:48,532 - INFO - === Concluído com sucesso ===
-2026-03-23 11:13:38,871 - INFO - === SimulaNewsMachine v2.1 iniciada ===
-2026-03-23 11:13:40,208 - INFO - Passo 1: Scanning feeds...
-2026-03-23 11:15:59,258 - INFO - Excluídos 15 artigos já vistos em briefs anteriores
-2026-03-23 11:15:59,258 - INFO - Scan completo: 57/57 feeds OK, 61 artigos
-2026-03-23 11:15:59,258 - INFO -    \u2192 61 artigos encontrados
-2026-03-23 11:15:59,258 - INFO - Passo 2: Curating...
-2026-03-23 11:15:59,262 - INFO - Dedup: 61 \u2192 60 artigos
-2026-03-23 11:15:59,266 - INFO -    \u2192 15 selecionados
-2026-03-23 11:15:59,266 - INFO - Passo 3: Formatting...
-2026-03-23 11:15:59,267 - INFO - Brief guardado em C:\Users\berna\Desktop\SIMULA_BRIEF_HOJE.md
-2026-03-23 11:15:59,267 - INFO -    \u2192 Brief guardado em C:\Users\berna\Desktop\SIMULA_BRIEF_HOJE.md
-2026-03-23 11:15:59,279 - INFO -    \u2192 Arquivo guardado em C:\Users\berna\Desktop\Simula_Project\morning-brief\archive\2026-03-23_brief.md
-2026-03-23 11:15:59,280 - INFO -    \u2192 run_summary.json actualizado
-2026-03-23 11:15:59,280 - INFO - === Concluído com sucesso ===
-2026-03-23 11:51:04,182 - INFO - === SimulaNewsMachine v2.2 iniciada ===
-2026-03-23 11:51:04,549 - INFO - Passo 1: Scanning feeds...
-2026-03-23 11:51:13,188 - WARNING - Feed falhou: RacingGames.gg — Feed malformado: <unknown>:5:95: not well-formed (invalid token)
-2026-03-23 11:51:18,250 - WARNING - Feed falhou: BeamNG Blog — Feed malformado: <unknown>:15:11: not well-formed (invalid token)
-2026-03-23 11:52:22,871 - WARNING - Feed falhou: RaceRoom — Feed malformado: <urlopen error [WinError 10060] Uma tentativa de ligação falhou porque o componente ligado não respondeu
-corretamente após um período de tempo, ou a ligação estabelecida falhou
-porque o anfitrião ligado não respondeu>
-2026-03-23 11:52:26,063 - WARNING - Feed falhou: GIANTS Software — Feed malformado: <unknown>:2:0: syntax error
-2026-03-23 11:52:28,084 - WARNING - Feed falhou: Flightsim.to — Feed malformado: <unknown>:3:0: syntax error
-2026-03-23 11:52:42,965 - WARNING - Feed falhou: SimRace247 — Feed malformado: <unknown>:33:686: not well-formed (invalid token)
-2026-03-23 11:52:58,498 - WARNING - Feed falhou: Random Callsign — Feed malformado: <unknown>:2:0: syntax error
-2026-03-23 11:53:01,864 - WARNING - Feed falhou: SimRacing.GP — Feed malformado: <unknown>:2:1750: not well-formed (invalid token)
-2026-03-23 11:53:10,402 - WARNING - Feed falhou: SimRacingDeal — Feed malformado: <unknown>:52:2: mismatched tag
-2026-03-23 11:53:17,442 - WARNING - Feed falhou: DrivingItalia — Feed malformado: <unknown>:7:37: not well-formed (invalid token)
-2026-03-23 11:53:18,263 - WARNING - Feed falhou: vRacingnews DE — Feed malformado: <unknown>:2:0: not well-formed (invalid token)
-2026-03-23 11:53:20,904 - WARNING - Feed falhou: Fanatec Blog — Feed malformado: <unknown>:2:334: not well-formed (invalid token)
-2026-03-23 11:53:22,014 - WARNING - Feed falhou: MOZA Blog — Feed malformado: <unknown>:2:0: syntax error
-2026-03-23 11:53:22,885 - WARNING - Feed falhou: FlightSim.com — Feed malformado: <unknown>:2:751: not well-formed (invalid token)
-2026-03-23 11:53:23,714 - WARNING - Feed falhou: MSFS Addons — Feed malformado: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'msfsaddons.org'. (_ssl.c:1081)>
-2026-03-23 11:53:30,544 - INFO - Scan completo: 17 OK, 25 vazios, 15 falhas, 76 artigos
-2026-03-23 11:53:30,544 - INFO -    -> 76 artigos encontrados
-2026-03-23 11:53:30,544 - INFO - Passo 2: Curating...
-2026-03-23 11:53:30,550 - INFO - Dedup: 76 -> 74 artigos
-2026-03-23 11:53:30,557 - INFO -    -> 15 selecionados
-2026-03-23 11:53:30,557 - INFO - Passo 3: Formatting...
-2026-03-23 11:53:30,558 - INFO - Brief guardado em C:\Users\berna\Desktop\SIMULA_BRIEF_HOJE.md
-2026-03-23 11:53:30,558 - INFO -    -> Brief guardado em C:\Users\berna\Desktop\SIMULA_BRIEF_HOJE.md
-2026-03-23 11:53:30,567 - INFO -    -> Arquivo guardado em C:\Users\berna\Desktop\Simula_Project\morning-brief\archive\2026-03-23_brief.md
-2026-03-23 11:53:30,569 - INFO -    -> run_summary.json actualizado
-2026-03-23 11:53:30,569 - INFO - === Concluido com sucesso ===
+2026-03-23 13:04:22,577 - INFO - === SimulaNewsMachine v2.2 iniciada ===
+2026-03-23 13:04:23,197 - INFO - Passo 1: Scanning feeds...
+2026-03-23 13:04:32,289 - WARNING - Feed falhou: RacingGames.gg — Feed malformado: <unknown>:5:95: not well-formed (invalid token)
+2026-03-23 13:04:37,891 - WARNING - Feed falhou: BeamNG Blog — Feed malformado: <unknown>:15:11: not well-formed (invalid token)
+2026-03-23 13:05:20,687 - WARNING - Feed falhou: RaceRoom — Feed malformado: <urlopen error timed out>
+2026-03-23 13:05:23,408 - WARNING - Feed falhou: GIANTS Software — Feed malformado: <unknown>:2:0: syntax error
+2026-03-23 13:05:25,319 - WARNING - Feed falhou: Flightsim.to — Feed malformado: <unknown>:3:0: syntax error
+2026-03-23 13:05:40,571 - WARNING - Feed falhou: SimRace247 — Feed malformado: <unknown>:33:686: not well-formed (invalid token)
+2026-03-23 13:06:06,573 - WARNING - Feed falhou: Random Callsign — Feed malformado: <unknown>:2:0: syntax error
+2026-03-23 13:06:12,043 - WARNING - Feed falhou: SimRacing.GP — Feed malformado: <unknown>:2:1750: not well-formed (invalid token)
+2026-03-23 13:06:21,861 - WARNING - Feed falhou: SimRacingDeal — Feed malformado: <unknown>:52:2: mismatched tag
+2026-03-23 13:06:28,999 - WARNING - Feed falhou: DrivingItalia — Feed malformado: <unknown>:7:37: not well-formed (invalid token)
+2026-03-23 13:06:29,919 - WARNING - Feed falhou: vRacingnews DE — Feed malformado: <unknown>:2:0: not well-formed (invalid token)
+2026-03-23 13:06:32,468 - WARNING - Feed falhou: Fanatec Blog — Feed malformado: <unknown>:2:334: not well-formed (invalid token)
+2026-03-23 13:06:33,935 - WARNING - Feed falhou: MOZA Blog — Feed malformado: <unknown>:2:0: syntax error
+2026-03-23 13:06:34,840 - WARNING - Feed falhou: FlightSim.com — Feed malformado: <unknown>:2:751: not well-formed (invalid token)
+2026-03-23 13:06:35,699 - WARNING - Feed falhou: MSFS Addons — Feed malformado: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'msfsaddons.org'. (_ssl.c:1081)>
+2026-03-23 13:06:44,167 - INFO - Scan completo: 19 OK, 23 vazios, 15 falhas, 80 artigos
+2026-03-23 13:06:44,168 - INFO -    -> 80 artigos encontrados
+2026-03-23 13:06:44,168 - INFO - Passo 2: Curating...
+2026-03-23 13:06:44,175 - INFO - Dedup: 80 -> 78 artigos
+2026-03-23 13:06:44,182 - INFO -    -> 15 selecionados
+2026-03-23 13:06:44,182 - INFO - Passo 3: Formatting...
+2026-03-23 13:06:44,183 - INFO - Brief guardado em C:\Users\berna\Desktop\SIMULA_BRIEF_HOJE.md
+2026-03-23 13:06:44,183 - INFO -    -> Brief guardado em C:\Users\berna\Desktop\SIMULA_BRIEF_HOJE.md
+2026-03-23 13:06:44,193 - INFO -    -> Arquivo guardado em C:\Users\berna\Desktop\Simula_Project\morning-brief\archive\2026-03-23_brief.md
+2026-03-23 13:06:44,194 - INFO -    -> run_summary.json actualizado
+2026-03-23 13:06:44,194 - INFO - === Concluido com sucesso ===

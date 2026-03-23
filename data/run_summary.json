@@ -1,9 +1,9 @@
 {
-  "started_at": "2026-03-23T11:51:04.182435",
-  "ended_at": "2026-03-23T11:53:30.567957",
+  "started_at": "2026-03-23T13:04:22.576656",
+  "ended_at": "2026-03-23T13:06:44.193923",
   "feeds_total": 57,
-  "feeds_ok": 17,
-  "feeds_empty": 25,
+  "feeds_ok": 19,
+  "feeds_empty": 23,
   "feeds_fail": 15,
   "feeds_failed_names": [
     "RacingGames.gg",
@@ -22,20 +22,20 @@
     "FlightSim.com",
     "MSFS Addons"
   ],
-  "articles_scanned": 76,
-  "articles_after_dedup": 74,
+  "articles_scanned": 80,
+  "articles_after_dedup": 78,
   "articles_selected": 15,
   "top_sources": [
     "Boosted Media YT",
     "OverTake.gg",
     "Motorsport.com",
     "OC Racing",
-    "aarava"
+    "BSIMRacing"
   ],
   "categories": {
     "hardware": 1,
-    "sim_racing": 7,
-    "motorsport": 3,
+    "sim_racing": 8,
+    "motorsport": 2,
     "racing_games": 4
   },
   "brief_file": "C:\\Users\\berna\\Desktop\\SIMULA_BRIEF_HOJE.md",

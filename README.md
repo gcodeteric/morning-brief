@@ -121,7 +121,7 @@ morning-brief\
 ├── data\                    ← Dados internos
 │   ├── seen_links.json      ← Links já mostrados (evita repetir)
 │   ├── run_summary.json     ← Resumo da última execução
-│   └── extracted_channel_ids.json  ← IDs YouTube extraídos
+│   └── extracted_channel_ids.json  ← IDs YouTube (gerado após correr channel_id_extractor.py)
 ├── logs\                    ← Logs diários
 └── archive\                 ← Arquivo de briefs anteriores
 ```

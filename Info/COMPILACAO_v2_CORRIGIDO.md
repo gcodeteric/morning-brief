@@ -526,7 +526,7 @@ master)
 
 500+ fontes mapeadas com URLs, handles, seguidores
 
-~90 RSS feeds operacionais no lançamento (escalável para 150+)
+~57-79 feeds operacionais (57 prontos + ~22 via channel_id_extractor.py, escalável para 150+)
 
 39 YouTube channel_ids catalogados (12 confirmados + 27 com método de extracção)
 
@@ -686,7 +686,7 @@ Visão Geral
 │
 ▼
 ```
-[SCANNER] Lê ~90 RSS feeds (escalável para 150+)
+[SCANNER] Lê ~57-79 feeds operacionais (escalável para 150+)
 ```
 │   (sim racing + motorsport + hardware + Nostalgia +
 │    racing games + esports + Portugal + deals)
@@ -729,7 +729,7 @@ Output: C:\Users\Bernardo\Desktop\SIMULA_BRIEF_HOJE.md
 
 
 ```
-Fontes RSS: ~90 feeds no lançamento (escalável para 150+)
+Fontes RSS: ~57-79 feeds operacionais (escalável para 150+)
 ```
 Tier 1 (priority 8-10): 8 sites notícias + 10 blogs oficiais sims + 5 blogs Nostalgia + 4 motorsport + 2
 racing games = ~29 feeds
@@ -739,7 +739,7 @@ feeds
 
 Tier 3 (YouTube RSS): 13 confirmados + 22 a extrair via script = ~35 feeds
 
-Total operacional no lançamento: ~90 feeds. Expansão para 150+ com integração de novas fontes
+Total operacional no lançamento: ~57-79 feeds. Expansão para 150+ com integração de novas fontes
 
 
 ```
@@ -833,7 +833,7 @@ SimulaNewsMachine\
 ├── scanner.py                         # Lê RSS feeds
 ├── curator.py                         # Deduplica, scoring, selecção
 ├── formatter.py                       # Gera .md + 5 prompts
-├── feeds.py                           # ~90 RSS feeds (+ dinâmicos do JSON)
+├── feeds.py                           # 57 RSS feeds (+ dinâmicos do JSON)
 ├── channel_id_extractor.py            # Extrai YouTube channel_ids (1x)
 ├── feed_validator.py                 # Testa feeds (1x + manutenção)
 ├── requirements.txt                  # feedparser, requests, python-dateutil
@@ -1231,7 +1231,7 @@ Total Produzido
 
 500+ fontes mapeadas
 
-~90 RSS feeds operacionais no lançamento (escalável para 150+)
+~57-79 feeds operacionais (57 prontos + ~22 via channel_id_extractor.py, escalável para 150+)
 
 
 ```
