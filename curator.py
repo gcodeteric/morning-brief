@@ -21,6 +21,9 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
+# Flag controlada por main.py para modo dry-run (não escrever ficheiros de estado)
+_DRY_RUN = False
+
 # ============================================================================
 # Keywords para scoring
 # ============================================================================
@@ -306,6 +309,9 @@ def _load_seen_links():
 # FIX 2.7 — Escrita atómica de seen_links.json
 def _save_seen_links(seen):
     """Guarda seen_links.json atomicamente."""
+    if _DRY_RUN:
+        logger.info("DRY RUN — seen_links.json não actualizado")
+        return
     try:
         tmp = SEEN_LINKS_FILE.with_suffix(".json.tmp")
         with open(tmp, "w", encoding="utf-8") as f:

@@ -51,7 +51,20 @@ def setup_logging():
     logging.getLogger().addHandler(logging.StreamHandler())
 
 
-def main():
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="SimulaNewsMachine — daily sim racing brief generator"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Corre o pipeline sem escrever ficheiros de output ou estado"
+    )
+    return parser.parse_args()
+
+
+def main(dry_run: bool = False):
     if not acquire_lock():
         print("Outra instancia ja esta a correr. A sair.")
         sys.exit(0)
@@ -60,10 +73,19 @@ def main():
         started_at = datetime.now().isoformat()
         setup_logging()
         logging.info("=== SimulaNewsMachine v2.2 iniciada ===")
+        if dry_run:
+            logging.info("DRY RUN — pipeline completo, nenhum ficheiro será escrito")
 
         from scanner import scan_all_feeds
         from curator import curate_articles
         from formatter import format_brief
+        import curator
+        import planner
+
+        # Propagar dry_run para módulos que escrevem ficheiros de estado
+        if dry_run:
+            curator._DRY_RUN = True
+            planner._DRY_RUN = True
 
         # Scan
         logging.info("Passo 1: Scanning feeds...")
@@ -85,7 +107,7 @@ def main():
 
         # Cards (import lazy — depende de Pillow/assets opcionais)
         card_paths = {}
-        if GENERATE_IMAGES:
+        if GENERATE_IMAGES and not dry_run:
             try:
                 from card_generator import generate_instagram_cards
                 card_paths = generate_instagram_cards(editorial_plan or {})
@@ -93,65 +115,72 @@ def main():
             except Exception as e:
                 logging.warning(f"Card generator falhou (não crítico): {e}")
 
-        # Format
-        logging.info("Passo 4: Formatting...")
-        format_brief(curated, OUTPUT_FILE, plan=editorial_plan, card_paths=card_paths)
-        logging.info(f"   -> Brief guardado em {OUTPUT_FILE}")
+        if not dry_run:
+            # Format
+            logging.info("Passo 4: Formatting...")
+            format_brief(curated, OUTPUT_FILE, plan=editorial_plan, card_paths=card_paths)
+            logging.info(f"   -> Brief guardado em {OUTPUT_FILE}")
 
-        # Archive
-        archive_file = ARCHIVE_DIR / f"{datetime.now().strftime('%Y-%m-%d')}_brief.md"
-        shutil.copy2(OUTPUT_FILE, archive_file)
-        logging.info(f"   -> Arquivo guardado em {archive_file}")
+            # Archive
+            archive_file = ARCHIVE_DIR / f"{datetime.now().strftime('%Y-%m-%d')}_brief.md"
+            shutil.copy2(OUTPUT_FILE, archive_file)
+            logging.info(f"   -> Arquivo guardado em {archive_file}")
 
-        # FIX 1.4 — run_summary.json com métricas completas
-        summary = {
-            "started_at": started_at,
-            "ended_at": datetime.now().isoformat(),
-            "feeds_total": scan_stats.get("total", 0),
-            "feeds_ok": scan_stats.get("ok", 0),
-            "feeds_empty": scan_stats.get("empty", 0),
-            "feeds_fail": scan_stats.get("fail", 0),
-            "feeds_failed_names": scan_stats.get("failed_names", []),
-            "articles_scanned": len(raw),
-            "articles_after_dedup": curated.get("total_after_dedup", 0),
-            "articles_selected": len(curated["selected"]),
-            "top_sources": list(dict.fromkeys(
-                a["source"] for a in curated["selected"][:8]
-            ))[:5],
-            "categories": curated.get("categories", {}),
-            "selected_by_category": curated.get("categories", {}),
-            "brief_file": str(OUTPUT_FILE),
-            "status": "OK",
-        }
-        with open(RUN_SUMMARY_FILE, "w", encoding="utf-8") as f:
-            json.dump(summary, f, indent=2, ensure_ascii=False)
+            # FIX 1.4 — run_summary.json com métricas completas
+            summary = {
+                "started_at": started_at,
+                "ended_at": datetime.now().isoformat(),
+                "feeds_total": scan_stats.get("total", 0),
+                "feeds_ok": scan_stats.get("ok", 0),
+                "feeds_empty": scan_stats.get("empty", 0),
+                "feeds_fail": scan_stats.get("fail", 0),
+                "feeds_failed_names": scan_stats.get("failed_names", []),
+                "articles_scanned": len(raw),
+                "articles_after_dedup": curated.get("total_after_dedup", 0),
+                "articles_selected": len(curated["selected"]),
+                "top_sources": list(dict.fromkeys(
+                    a["source"] for a in curated["selected"][:8]
+                ))[:5],
+                "categories": curated.get("categories", {}),
+                "selected_by_category": curated.get("categories", {}),
+                "brief_file": str(OUTPUT_FILE),
+                "status": "OK",
+            }
+            with open(RUN_SUMMARY_FILE, "w", encoding="utf-8") as f:
+                json.dump(summary, f, indent=2, ensure_ascii=False)
 
-        logging.info("   -> run_summary.json actualizado")
+            logging.info("   -> run_summary.json actualizado")
 
-        # Alertas operacionais (não crítico)
-        try:
-            from alerts import check_and_alert
-            check_and_alert(summary)
-        except Exception as e:
-            logging.warning(f"Alerts falharam (não crítico): {e}")
+            # Alertas operacionais (não crítico)
+            try:
+                from alerts import check_and_alert
+                check_and_alert(summary)
+            except Exception as e:
+                logging.warning(f"Alerts falharam (não crítico): {e}")
+        else:
+            logging.info(
+                "DRY RUN concluído — %d artigos seleccionados, brief NÃO guardado",
+                len(curated.get("selected", []))
+            )
 
         logging.info("=== Concluido com sucesso ===")
 
     except Exception as e:
         logging.error(f"ERRO FATAL: {e}", exc_info=True)
 
-        # Guardar summary mesmo em caso de erro
-        try:
-            error_summary = {
-                "started_at": started_at,
-                "ended_at": datetime.now().isoformat(),
-                "status": "ERRO",
-                "error": str(e),
-            }
-            with open(RUN_SUMMARY_FILE, "w", encoding="utf-8") as f:
-                json.dump(error_summary, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
+        # Guardar summary mesmo em caso de erro (excepto em dry-run)
+        if not dry_run:
+            try:
+                error_summary = {
+                    "started_at": started_at,
+                    "ended_at": datetime.now().isoformat(),
+                    "status": "ERRO",
+                    "error": str(e),
+                }
+                with open(RUN_SUMMARY_FILE, "w", encoding="utf-8") as f:
+                    json.dump(error_summary, f, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
 
         sys.exit(1)
 
@@ -160,4 +189,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(dry_run=args.dry_run)

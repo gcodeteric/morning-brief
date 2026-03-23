@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 WEEKLY_CACHE_FILE = Path(__file__).parent / "data" / "weekly_cache.json"
 
+# Flag controlada por main.py para modo dry-run (não escrever ficheiros de estado)
+_DRY_RUN = False
+
 DISCORD_MIN_SCORE = 35
 
 
@@ -142,6 +145,9 @@ def _load_weekly_cache():
 
 def _save_weekly_cache(entries):
     """Guarda weekly_cache.json atomicamente."""
+    if _DRY_RUN:
+        logger.info("DRY RUN — weekly_cache.json não actualizado")
+        return
     try:
         WEEKLY_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
         tmp = WEEKLY_CACHE_FILE.with_suffix(".json.tmp")
