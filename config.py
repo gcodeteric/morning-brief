@@ -32,6 +32,7 @@ GUARANTEE_CATEGORIES = {
 }
 GUARANTEE_PORTUGAL = True
 MAX_PER_SOURCE = 3  # Máximo de artigos por fonte no top 15
+MAX_PER_SOURCE_YOUTUBE = 1  # Máximo de artigos por canal YouTube por brief
 
 # Criar pastas se não existirem
 for d in [LOG_DIR, ARCHIVE_DIR, OUTPUT_DIR, DATA_DIR]:

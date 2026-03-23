@@ -1,18 +1,15 @@
 """
-SimulaNewsMachine — Extractor de Channel IDs do YouTube.
+SimulaNewsMachine — Extractor de Channel IDs do YouTube via yt-dlp.
 
 Corre uma vez: python channel_id_extractor.py
-Visita cada URL de canal YouTube e extrai o channelId via regex do HTML.
+Requer: pip install yt-dlp (adicionar ao requirements.txt)
 Guarda resultados em data/extracted_channel_ids.json
 """
 
 import json
-import re
-import time
 import sys
+import time
 from pathlib import Path
-
-import requests
 
 from feeds import YOUTUBE_CHANNELS_TO_EXTRACT
 
@@ -20,43 +17,47 @@ DATA_DIR = Path(__file__).resolve().parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = DATA_DIR / "extracted_channel_ids.json"
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept-Language": "en-US,en;q=0.9",
-}
 
-# Padrões regex para encontrar channel ID no HTML do YouTube
-CHANNEL_ID_PATTERNS = [
-    r'"channelId"\s*:\s*"(UC[a-zA-Z0-9_-]{22})"',
-    r'"externalId"\s*:\s*"(UC[a-zA-Z0-9_-]{22})"',
-    r'channel_id=(UC[a-zA-Z0-9_-]{22})',
-    r'/channel/(UC[a-zA-Z0-9_-]{22})',
-    r'"browse_id"\s*:\s*"(UC[a-zA-Z0-9_-]{22})"',
-]
-
-
-def extract_channel_id(url):
-    """Tenta extrair o channel ID de uma página YouTube."""
+def extract_channel_id_yt_dlp(url):
+    """Extrai channel_id usando yt-dlp (sem fazer download, só metadata)."""
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15, allow_redirects=True)
-        resp.raise_for_status()
-        html = resp.text
-
-        for pattern in CHANNEL_ID_PATTERNS:
-            match = re.search(pattern, html)
-            if match:
-                return match.group(1)
-
+        import yt_dlp
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": True,
+            "playlist_items": "1",
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            # yt-dlp devolve channel_id directamente
+            channel_id = info.get("channel_id") or info.get("uploader_id")
+            if channel_id and channel_id.startswith("UC"):
+                return channel_id
+            # Fallback: tentar no primeiro entry se for playlist
+            entries = info.get("entries", [])
+            first = next(iter(entries), None)
+            if first:
+                cid = first.get("channel_id") or first.get("uploader_id")
+                if cid and cid.startswith("UC"):
+                    return cid
         return None
     except Exception as e:
-        print(f"   ERRO ao aceder: {e}")
+        print(f"   ERRO yt-dlp: {e}")
         return None
 
 
 def main():
+    # Verificar se yt-dlp está instalado
+    try:
+        import yt_dlp
+    except ImportError:
+        print("ERRO: yt-dlp não está instalado.")
+        print("Instalar com: pip install yt-dlp")
+        return 1
+
     print("=" * 60)
-    print("SimulaNewsMachine — YouTube Channel ID Extractor")
+    print("SimulaNewsMachine — YouTube Channel ID Extractor (yt-dlp)")
     print("=" * 60)
     print()
 
@@ -70,9 +71,10 @@ def main():
         print(f"[{i}/{len(YOUTUBE_CHANNELS_TO_EXTRACT)}] {name}")
         print(f"   URL: {url}")
 
-        channel_id = extract_channel_id(url)
+        channel_id = extract_channel_id_yt_dlp(url)
 
         if channel_id:
+            rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
             print(f"   OK → {channel_id}")
             ok_count += 1
             results.append({
@@ -81,7 +83,7 @@ def main():
                 "channel_id": channel_id,
                 "cat": channel.get("cat", "sim_racing"),
                 "p": channel.get("p", 5),
-                "rss_url": f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}",
+                "rss_url": rss_url,
                 "status": "OK",
             })
         else:
@@ -97,11 +99,9 @@ def main():
                 "status": "FALHOU",
             })
 
-        # Sleep entre requests para não ser bloqueado
         if i < len(YOUTUBE_CHANNELS_TO_EXTRACT):
-            time.sleep(2)
+            time.sleep(1)
 
-    # Guardar resultados
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
 
@@ -113,7 +113,7 @@ def main():
 
     if fail_count > 0:
         print()
-        print("Canais que falharam (verificar manualmente):")
+        print("Canais que falharam:")
         for r in results:
             if r["status"] == "FALHOU":
                 print(f"  - {r['name']}: {r['handle']}")

@@ -112,7 +112,7 @@ def format_brief(curated, output_path):
     # --- HEADER --- (FIX 3.3: "artigos recolhidos" em vez de "fontes analisadas")
     md.append(f"# SIMULA BRIEF — {dia_semana}, {data_str}")
     md.append("")
-    md.append(f"**{total_before}** artigos recolhidos | **{total_after}** novos após dedup | **{len(selected)}** selecionados")
+    md.append(f"**{total_before}** artigos recolhidos | **{total_after}** únicos hoje | **{len(selected)}** selecionados")
     md.append("")
     md.append("---")
     md.append("")

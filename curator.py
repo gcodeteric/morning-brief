@@ -15,6 +15,7 @@ from urllib.parse import urlparse, parse_qs, urlencode
 from config import (
     MAX_ARTICLES_OUTPUT, MIN_RELEVANCE_SCORE, SEEN_LINKS_FILE,
     GUARANTEE_CATEGORIES, GUARANTEE_PORTUGAL, MAX_PER_SOURCE,
+    MAX_PER_SOURCE_YOUTUBE,
     SEEN_LINKS_MAX_AGE_HOURS,
 )
 
@@ -106,6 +107,23 @@ STOPWORDS = {
     "new", "now", "get", "out", "up",
 }
 
+YOUTUBE_CHANNEL_NOISE_PATTERNS = [
+    "discounts", "coupons", "coupon", "affiliate", "patreon.com",
+    "g2a.com", "nohesi.gg", "discord.gg/", "twitch.tv/",
+    "*available*", "*here*", "join my discord", "join the discord",
+    "check out my", "use code", "sponsor",
+]
+
+YOUTUBE_URL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
+YOUTUBE_EMOJI_RE = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"
+    "\U00002700-\U000027BF"
+    "\U000024C2-\U0001F251"
+    "]+",
+    flags=re.UNICODE,
+)
+
 
 def _canonicalize_url(url):
     """Normaliza URL para dedup: remove query params de tracking, www, trailing slash."""
@@ -146,6 +164,48 @@ def _title_similarity(tokens1, tokens2):
     common = set1 & set2
     max_len = max(len(set1), len(set2))
     return len(common) / max_len if max_len else 0.0
+
+
+def _youtube_summary_useful_length(summary):
+    """Conta caracteres úteis do summary YouTube após remover URLs e emojis."""
+    cleaned = YOUTUBE_URL_RE.sub(" ", summary or "")
+    cleaned = YOUTUBE_EMOJI_RE.sub(" ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    useful = re.sub(r"[^0-9A-Za-zÀ-ÿ]", "", cleaned)
+    return len(useful)
+
+
+def _is_youtube_source(article):
+    """Detecta artigos provenientes de feeds YouTube no formato actual do repositório."""
+    source = article.get("source", "")
+    link = (article.get("link") or "").lower()
+    return (
+        source.startswith("YT ")
+        or "YouTube" in source
+        or source.endswith(" YT")
+        or "youtube.com/watch" in link
+        or "youtube.com/shorts" in link
+    )
+
+
+def _is_youtube_channel_noise(article):
+    """Detecta descrições de canal/promocionais vindas de feeds YouTube."""
+    if not _is_youtube_source(article):
+        return False
+
+    link = (article.get("link") or "").lower()
+    if "youtube.com/watch" not in link and "youtube.com/shorts" not in link:
+        return False
+
+    summary = (article.get("summary") or "").lower()
+    matched_patterns = sum(1 for pattern in YOUTUBE_CHANNEL_NOISE_PATTERNS if pattern in summary)
+    return matched_patterns >= 3
+
+
+def _max_articles_for_source(article):
+    """Aplica limite diferenciado para fontes YouTube."""
+    is_youtube = _is_youtube_source(article)
+    return MAX_PER_SOURCE_YOUTUBE if is_youtube else MAX_PER_SOURCE
 
 
 def _score_article(article):
@@ -272,6 +332,21 @@ def curate_articles(articles):
 
     total_before = len(articles)
 
+    filtered_articles = []
+    for article in articles:
+        is_youtube_article = _is_youtube_source(article)
+
+        if is_youtube_article and _youtube_summary_useful_length(article.get("summary", "")) < 20:
+            logger.info(f"FILTRADO: resumo YouTube vazio/curto — {article['title']}")
+            continue
+
+        if _is_youtube_channel_noise(article):
+            logger.info(f"FILTRADO: descrição de canal YouTube — {article['title']}")
+            continue
+
+        filtered_articles.append(article)
+    articles = filtered_articles
+
     # ========================================================================
     # Dedup camada 1: Link canónico
     # ========================================================================
@@ -290,7 +365,7 @@ def curate_articles(articles):
             deduped_by_url.append(article)
 
     # ========================================================================
-    # Dedup camada 2: Título normalizado (>65% tokens em comum)
+    # Dedup camada 2: Título normalizado (>55% tokens em comum)
     # ========================================================================
     deduped_by_title = []
     title_tokens_list = []
@@ -298,7 +373,7 @@ def curate_articles(articles):
         tokens = _normalize_title(article["title"])
         is_dup = False
         for i, existing_tokens in enumerate(title_tokens_list):
-            if _title_similarity(tokens, existing_tokens) > 0.65:
+            if _title_similarity(tokens, existing_tokens) > 0.55:
                 if article["priority"] > deduped_by_title[i]["priority"]:
                     deduped_by_title[i] = article
                     title_tokens_list[i] = tokens
@@ -351,7 +426,7 @@ def curate_articles(articles):
             (i, a) for i, a in enumerate(deduped)
             if a["category"] == cat and i not in used_indices
             and a["score"] >= MIN_RELEVANCE_SCORE
-            and source_counts.get(a["source"], 0) < MAX_PER_SOURCE
+            and source_counts.get(a["source"], 0) < _max_articles_for_source(a)
         ]
         for j in range(min(min_count, len(cat_articles))):
             idx, article = cat_articles[j]
@@ -364,7 +439,7 @@ def curate_articles(articles):
         pt_articles = [
             (i, a) for i, a in enumerate(deduped)
             if a["category"] == "portugal" and i not in used_indices
-            and source_counts.get(a["source"], 0) < MAX_PER_SOURCE
+            and source_counts.get(a["source"], 0) < _max_articles_for_source(a)
         ]
         if pt_articles:
             idx, article = pt_articles[0]
@@ -378,7 +453,8 @@ def curate_articles(articles):
             break
         if i not in used_indices and article["score"] >= MIN_RELEVANCE_SCORE:
             src = article["source"]
-            if source_counts.get(src, 0) < MAX_PER_SOURCE:
+            max_allowed = _max_articles_for_source(article)
+            if source_counts.get(src, 0) < max_allowed:
                 selected.append(article)
                 used_indices.add(i)
                 source_counts[src] = source_counts.get(src, 0) + 1
@@ -390,7 +466,8 @@ def curate_articles(articles):
                 break
             if i not in used_indices:
                 src = article["source"]
-                if source_counts.get(src, 0) < MAX_PER_SOURCE:
+                max_allowed = _max_articles_for_source(article)
+                if source_counts.get(src, 0) < max_allowed:
                     selected.append(article)
                     used_indices.add(i)
                     source_counts[src] = source_counts.get(src, 0) + 1
