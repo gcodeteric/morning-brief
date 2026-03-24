@@ -35,9 +35,9 @@ FEEDS = [
     # TIER 1 — Nostalgia Official (priority 7-10)
     # =========================================================================
     {"url": "https://blog.scssoft.com/feeds/posts/default?alt=rss", "cat": "nostalgia", "p": 10, "name": "SCS Software Blog"},
-    {"url": "https://www.farming-simulator.com/feed.php", "cat": "nostalgia", "p": 9, "name": "GIANTS Software"},
+    # REMOVIDO: GIANTS Software feed inactivo em 2026
     {"url": "https://simulatornews.com/feed/", "cat": "nostalgia", "p": 8, "name": "SimulatorNews"},
-    {"url": "https://flightsim.to/feed", "cat": "nostalgia", "p": 7, "name": "Flightsim.to"},
+    # REMOVIDO: Flightsim.to feed inactivo em 2026
 
     # =========================================================================
     # TIER 1 — Motorsport Real (priority 7-9)
@@ -73,8 +73,8 @@ FEEDS = [
     {"url": "https://vracingnews.de/feed/", "cat": "sim_racing", "p": 4, "name": "vRacingnews DE"},
     {"url": "https://fanatec.com/blog/feed/", "cat": "hardware", "p": 7, "name": "Fanatec Blog"},
     {"url": "https://mozaracing.com/blog/feed/", "cat": "hardware", "p": 7, "name": "MOZA Blog"},
-    {"url": "https://www.flightsim.com/feed/", "cat": "nostalgia", "p": 5, "name": "FlightSim.com"},
-    {"url": "https://msfsaddons.org/feed/", "cat": "nostalgia", "p": 5, "name": "MSFS Addons"},
+    # REMOVIDO: FlightSim.com feed inactivo em 2026
+    {"url": "https://msfsaddons.com/feed/", "cat": "nostalgia", "p": 5, "name": "MSFS Addons"},
 
     # =========================================================================
     # TIER 3 — YouTube RSS (channel_id confirmados)
@@ -90,6 +90,18 @@ FEEDS = [
     {"url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC7WNZQb14M9X6whT6WMsWoQ", "cat": "racing_games", "p": 7, "name": "Tiametmarduk"},
     {"url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC-46hTnlyW3aCwjHs2acDzg", "cat": "racing_games", "p": 7, "name": "aarava"},
     {"url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC3Xu9GSp5-yVa1ck91SjRWA", "cat": "racing_games", "p": 7, "name": "SLAPTrain"},
+
+    # =========================================================================
+    # TIER 3 — Nostalgia YT (channel_id confirmados)
+    # =========================================================================
+    {"url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCSeb5KSN6BC1c0WwEjUzM_A", "cat": "nostalgia", "p": 6, "name": "Squirrel YT"},
+    {"url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCQ8k8yTDLITldfWYKDs3xFg", "cat": "nostalgia", "p": 6, "name": "Daggerwin YT"},
+    {"url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCOkhQewmm48tEpk9x9hwdSw", "cat": "nostalgia", "p": 6, "name": "MrSealyP YT"},
+    {"url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCEodFwnfPXdkzVPJZmuzAIg", "cat": "nostalgia", "p": 6, "name": "C.W. Lemoine YT"},
+    {"url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCtiq6FTXiFKQm-wqMuRijgA", "cat": "nostalgia", "p": 6, "name": "ObsidianAnt YT"},
+    {"url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC6zzlBIwNS9GJZZ3rBx_WhQ", "cat": "nostalgia", "p": 6, "name": "Hudson's Playground YT"},
+    {"url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCAILTiWNai7Y2zsO8ECFxcA", "cat": "nostalgia", "p": 6, "name": "320 Sim Pilot YT"},
+
     {"url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCPUDe8-YI3gc7SQrxRL75ng", "cat": "portugal", "p": 8, "name": "eSimRacing PT"},
     {"url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCTkR43EyS8y7d_uyd9rqu2A", "cat": "portugal", "p": 8, "name": "SimRacing Portugal"},
 ]
