@@ -7,6 +7,14 @@ Gera ficheiro .md completo no Desktop.
 import logging
 from datetime import datetime
 
+DAY_CONTEXT = {
+    0: "É segunda-feira — menciona brevemente o que aconteceu no fim-de-semana.",
+    4: "É sexta-feira — podes antecipar o que vem aí este fim-de-semana.",
+    5: "É sábado — foca no que está a acontecer hoje em pista ou online.",
+    6: "É domingo — tom mais calmo, foco no resumo da semana.",
+}
+# Restantes dias: sem contexto extra
+
 logger = logging.getLogger(__name__)
 
 # Mapeamento de categoria -> emoji
@@ -185,6 +193,7 @@ def format_brief(curated, output_path, plan=None, card_paths=None):
     card_sim_path  = card_paths.get("sim_racing",  "Desktop/SIMULA_CARDS_HOJE/card_01_sim_racing.png")
     card_moto_path = card_paths.get("motorsport",  "Desktop/SIMULA_CARDS_HOJE/card_02_motorsport.png")
 
+    day_context = DAY_CONTEXT.get(now.weekday(), "")
     ig_manha = "Carrossel" if now.weekday() % 2 == 0 else "Reel"
     ig_tarde = "Reel"      if now.weekday() % 2 == 0 else "Carrossel"
 
@@ -218,12 +227,14 @@ Notícia: {ig_sim.get('title', 'N/A') if ig_sim else 'N/A'}
 Fonte: {ig_sim.get('source', 'N/A') if ig_sim else 'N/A'}
 Resumo: {ig_sim.get('summary', '')[:200] if ig_sim else ''}
 Link: {ig_sim.get('link', '') if ig_sim else ''}
+{f"CONTEXTO DO DIA: {day_context}" if day_context else ""}
 
 POST 2 — MOTORSPORT (publicar 18:00):
 Notícia: {ig_moto.get('title', 'N/A') if ig_moto else 'N/A'}
 Fonte: {ig_moto.get('source', 'N/A') if ig_moto else 'N/A'}
 Resumo: {ig_moto.get('summary', '')[:200] if ig_moto else ''}
 Link: {ig_moto.get('link', '') if ig_moto else ''}
+{f"CONTEXTO DO DIA: {day_context}" if day_context else ""}
 
 TAREFA — Para CADA post gera:
 1. Caption completa (hook forte primeira linha, máx 2200 chars)
