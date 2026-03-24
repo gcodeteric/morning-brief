@@ -103,9 +103,15 @@ THRESHOLD: approved = true APENAS se average >= 7.0
 
 
 def _clean_output(text: str) -> str:
-    """Remove blocos <think> de modelos de raciocínio como MiniMax M2.7."""
+    """Remove <think>, blocos ```json e artefactos de modelos de raciocínio."""
     import re
+    # Remove blocos <think>
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    # Remove wrapper ```json ... ``` ou ``` ... ```
+    text = re.sub(r'^```(?:json)?\s*', '', text.strip())
+    text = re.sub(r'\s*```$', '', text.strip())
+    # Remove caracteres não-latinos isolados (artefactos de modelos multilíngue)
+    text = re.sub(r'[^\x00-\x7FÀ-ÿ\u0080-\u024F\n\r\t{}\[\]",:./\-_@#!?()0-9 ]', '', text)
     return text.strip()
 
 
