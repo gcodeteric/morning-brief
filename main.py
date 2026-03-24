@@ -64,6 +64,54 @@ def parse_args():
     return parser.parse_args()
 
 
+def _print_run_summary(curated, plan, card_paths, dry_run):
+    try:
+        def _safe_print(text=""):
+            try:
+                print(text)
+            except UnicodeEncodeError:
+                encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+                fallback_text = text.replace("✓", "OK").replace("–", "-")
+                safe_text = fallback_text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+                print(safe_text)
+
+        curated = curated or {}
+        plan = plan or {}
+        card_paths = card_paths or []
+        selected = curated.get("selected", [])
+        top3 = selected[:3]
+
+        _safe_print("\n" + "=" * 52)
+        if dry_run:
+            _safe_print("  DRY RUN — nenhum ficheiro escrito")
+            _safe_print("=" * 52)
+
+        if top3:
+            _safe_print("  TOP 3 ARTIGOS:")
+            for i, a in enumerate(top3, 1):
+                title = a.get("title", "sem título")[:45]
+                score = a.get("score", 0)
+                _safe_print(f"  {i}. [{score:>3}] {title}")
+        else:
+            _safe_print("  Sem artigos seleccionados")
+
+        _safe_print("=" * 52)
+
+        ig_sim = "✓" if plan.get("instagram_sim_racing") else "–"
+        ig_moto = "✓" if plan.get("instagram_motorsport") else "–"
+        yt_daily = "✓" if plan.get("youtube_daily") else "–"
+        reddit = len(plan.get("reddit_candidates", []))
+        discord = "✓" if plan.get("discord_post") else "SILÊNCIO"
+        cards = len(card_paths) if card_paths else 0
+
+        _safe_print(f"  IG sim={ig_sim}  IG moto={ig_moto}  "
+                    f"YT={yt_daily}  Reddit={reddit}  "
+                    f"Discord={discord}  Cards={cards}")
+        _safe_print("=" * 52 + "\n")
+    except Exception:
+        pass  # preview nunca pode quebrar o run
+
+
 def main(dry_run: bool = False):
     if not acquire_lock():
         print("Outra instancia ja esta a correr. A sair.")
@@ -163,6 +211,7 @@ def main(dry_run: bool = False):
                 len(curated.get("selected", []))
             )
 
+        _print_run_summary(curated, editorial_plan, card_paths, dry_run)
         logging.info("=== Concluido com sucesso ===")
 
     except Exception as e:
