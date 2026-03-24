@@ -145,6 +145,23 @@ def main(dry_run: bool = False):
         curated = curate_articles(raw)
         logging.info(f"   -> {len(curated['selected'])} selecionados")
 
+        # ── Passo 2.5: Agent Pipeline MiniMax M2.7 (não crítico) ──────
+        logging.info("Passo 2.5: Agent pipeline MiniMax M2.7...")
+        agent_outputs = []
+        try:
+            from agents import run_full_pipeline
+            top3 = curated["selected"][:3]
+            for art in top3:
+                result = run_full_pipeline(art)
+                agent_outputs.append(result)
+                logging.info(f"   ✓ {art.get('title','')[:50]}")
+            logging.info(f"   → {len(agent_outputs)} posts gerados pelo pipeline")
+        except Exception as e:
+            logging.warning(f"Agent pipeline falhou (não crítico): {e}")
+        finally:
+            # sempre previsível — mesmo com exceção parcial
+            curated["agent_outputs"] = agent_outputs or []
+
         # Plan (não crítico — formatter tem fallback interno)
         logging.info("Passo 3: Planning...")
         editorial_plan = None
