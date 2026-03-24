@@ -107,6 +107,43 @@ def _generate_news_block(selected):
         lines.append("")
     return "\n".join(lines)
 
+def _enrich_article(article: dict) -> dict:
+    """Expande o artigo com campos calculados para prompts mais ricos."""
+    summary = article.get("summary") or ""
+    title   = article.get("title") or ""
+    source  = article.get("source") or ""
+    score   = article.get("score", 0)
+    category = article.get("category", "unknown")
+
+    # Detecta tipo de conteúdo para guiar o tom
+    is_product_news = any(w in title.lower() for w in [
+        "launch", "release", "new", "announce", "novo", "lançamento", "review"
+    ])
+    is_event_news = any(w in title.lower() for w in [
+        "race", "championship", "winner", "round", "corrida", "campeonato"
+    ])
+    is_opinion = any(w in source.lower() for w in [
+        "reddit", "forum", "community", "r/"
+    ])
+
+    content_type = (
+        "LANÇAMENTO/PRODUTO" if is_product_news else
+        "EVENTO/COMPETIÇÃO"  if is_event_news   else
+        "COMUNIDADE/OPINIÃO" if is_opinion       else
+        "NOTÍCIA GERAL"
+    )
+
+    # Expande summary — usa os primeiros 600 chars se disponível
+    full_summary = (article.get("summary") or "")[:600]
+
+    return {
+        **article,
+        "full_summary":  full_summary,
+        "content_type":  content_type,
+        "is_high_score": score >= 80,
+        "word_count_est": len(full_summary.split()),
+    }
+
 
 def format_brief(curated, output_path, plan=None, card_paths=None):
     """Gera o ficheiro .md completo com brief + 5 prompts."""
