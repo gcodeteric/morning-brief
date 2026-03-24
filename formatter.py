@@ -4,6 +4,7 @@ SimulaNewsMachine — Formatação do brief diário + 5 prompts para redes socia
 Gera ficheiro .md completo no Desktop.
 """
 
+import json
 import logging
 from datetime import datetime
 
@@ -102,7 +103,7 @@ def _generate_news_block(selected):
         link = a.get("link", "")
         lines.append(f"{i}. [{category}] {title} — {source}")
         if summary:
-            lines.append(f"   Resumo: {summary[:150]}")
+            lines.append(f"   Resumo: {summary[:400]}")
         lines.append(f"   Link: {link}")
         lines.append("")
     return "\n".join(lines)
@@ -226,6 +227,12 @@ def format_brief(curated, output_path, plan=None, card_paths=None):
     reddit_arts = plan.get("reddit_candidates", [])
     discord_art = plan.get("discord_post")
     is_sunday   = plan.get("is_sunday", False)
+    ig_sim_e    = _enrich_article(ig_sim)      if ig_sim      else {}
+    ig_moto_e   = _enrich_article(ig_moto)     if ig_moto     else {}
+    x1_e        = _enrich_article(x1)          if x1          else {}
+    x2_e        = _enrich_article(x2)          if x2          else {}
+    yt_e        = _enrich_article(yt)          if yt          else {}
+    discord_e   = _enrich_article(discord_art) if discord_art else {}
 
     card_sim_path  = card_paths.get("sim_racing",  "Desktop/SIMULA_CARDS_HOJE/card_01_sim_racing.png")
     card_moto_path = card_paths.get("motorsport",  "Desktop/SIMULA_CARDS_HOJE/card_02_motorsport.png")
@@ -260,17 +267,21 @@ CONTEXTO DA MARCA:
   POST 2: {card_moto_path}
 
 POST 1 — SIM RACING (publicar 09:00):
-Notícia: {ig_sim.get('title', 'N/A') if ig_sim else 'N/A'}
-Fonte: {ig_sim.get('source', 'N/A') if ig_sim else 'N/A'}
-Resumo: {ig_sim.get('summary', '')[:200] if ig_sim else ''}
-Link: {ig_sim.get('link', '') if ig_sim else ''}
+Tipo: {ig_sim_e.get('content_type', 'N/A')}
+Notícia: {ig_sim_e.get('title', 'N/A')}
+Fonte: {ig_sim_e.get('source', 'N/A')}
+Contexto completo: {ig_sim_e.get('full_summary', 'N/A')}
+Link: {ig_sim_e.get('link', '')}
+Score: {ig_sim_e.get('score', 0)}/100
 {f"CONTEXTO DO DIA: {day_context}" if day_context else ""}
 
 POST 2 — MOTORSPORT (publicar 18:00):
-Notícia: {ig_moto.get('title', 'N/A') if ig_moto else 'N/A'}
-Fonte: {ig_moto.get('source', 'N/A') if ig_moto else 'N/A'}
-Resumo: {ig_moto.get('summary', '')[:200] if ig_moto else ''}
-Link: {ig_moto.get('link', '') if ig_moto else ''}
+Tipo: {ig_moto_e.get('content_type', 'N/A')}
+Notícia: {ig_moto_e.get('title', 'N/A')}
+Fonte: {ig_moto_e.get('source', 'N/A')}
+Contexto completo: {ig_moto_e.get('full_summary', 'N/A')}
+Link: {ig_moto_e.get('link', '')}
+Score: {ig_moto_e.get('score', 0)}/100
 {f"CONTEXTO DO DIA: {day_context}" if day_context else ""}
 
 TAREFA — Para CADA post gera:
@@ -298,12 +309,16 @@ REGRAS:
 Tom: directo, opinativo, convida à discussão. PT-PT. Sem imagens. Texto + link.
 
 THREAD 1 — SIM RACING (publicar 09:30):
-Notícia: {x1.get('title', 'N/A') if x1 else 'N/A'}
-Link original: {x1.get('link', '') if x1 else ''}
+Tipo: {x1_e.get('content_type', 'N/A')}
+Notícia: {x1_e.get('title', 'N/A')}
+Contexto completo: {x1_e.get('full_summary', '')}
+Link: {x1_e.get('link', '')}
 
 THREAD 2 — MOTORSPORT (publicar 18:30):
-Notícia: {x2.get('title', 'N/A') if x2 else 'N/A'}
-Link original: {x2.get('link', '') if x2 else ''}
+Tipo: {x2_e.get('content_type', 'N/A')}
+Notícia: {x2_e.get('title', 'N/A')}
+Contexto completo: {x2_e.get('full_summary', '')}
+Link: {x2_e.get('link', '')}
 
 TAREFA — Para CADA notícia, gera thread de 3 tweets:
 - Tweet 1: Hook forte (máx 280 chars). SEM LINK.
@@ -327,9 +342,10 @@ REGRAS:
 Vais criar um YouTube Short faceless (~60 segundos). PT-PT.
 
 NOTÍCIA SELECCIONADA:
-{yt.get('title', 'N/A') if yt else 'N/A'} — {yt.get('source', '') if yt else ''}
-Resumo: {yt.get('summary', '')[:200] if yt else ''}
-Link: {yt.get('link', '') if yt else ''}
+Tipo: {yt_e.get('content_type', 'N/A')}
+Notícia: {yt_e.get('title', 'N/A')} — {yt_e.get('source', '')}
+Contexto completo: {yt_e.get('full_summary', '')}
+Link: {yt_e.get('link', '')}
 
 TAREFA:
 1. 3 opções de título (máx 60 chars, emoji, hook forte)
@@ -435,7 +451,7 @@ CANAL: #noticias-dia
 
 NOTÍCIA:
 {discord_art.get('title', 'N/A')} — {discord_art.get('source', 'N/A')}
-Resumo: {discord_art.get('summary', '')[:200]}
+Contexto completo: {discord_e.get('full_summary', '')}
 Link: {discord_art.get('link', '')}
 
 FORMATO OBRIGATÓRIO:
@@ -459,6 +475,63 @@ REGRAS:
     md.append("")
     md.append(f"*Gerado automaticamente por SimulaNewsMachine v2.2 — {timestamp}*")
     md.append("")
+
+    # --- AGENT OUTPUTS (MiniMax M2.7) ---
+    agent_outputs = curated.get("agent_outputs", [])
+    if agent_outputs:
+        md.append("---")
+        md.append("")
+        md.append("# 🤖 POSTS GERADOS — PIPELINE MINIMAX M2.7")
+        md.append("")
+        md.append("*Score mínimo aprovação: 7.0/10*")
+        md.append("")
+        for i, output in enumerate(agent_outputs, 1):
+            article  = output.get("article", {})
+            post     = output.get("post", "")
+            qa_raw   = output.get("qa", "")
+            img      = output.get("image_prompt", "")
+            voice    = output.get("voice_script", "")
+
+            # Parse QA — tolerante a falhas parciais
+            qa_score    = "N/A"
+            qa_approved = False
+            hashtags    = []
+            try:
+                qa_data     = json.loads(qa_raw)
+                qa_score    = qa_data.get("average", "N/A")
+                qa_approved = qa_data.get("approved", False)
+                hashtags    = qa_data.get("hashtags", [])
+                issues      = qa_data.get("issues", [])
+            except Exception:
+                issues = []
+
+            # Não mostrar bloco vazio se agente falhou
+            if not post and not img and not voice:
+                continue
+
+            status = "✅ APROVADO" if qa_approved else "⚠️ REVISTO PELO QA"
+            qa_display = f"{qa_score}/10" if qa_score != "N/A" else "não disponível"
+
+            md.append(f"## Post {i} — {article.get('title','')[:60]}")
+            md.append(f"**Status:** {status} | **Score QA:** {qa_display}")
+            if issues:
+                md.append(f"**Issues:** {', '.join(issues)}")
+            md.append("")
+
+            if post:
+                md.append(post)
+                md.append("")
+            if hashtags:
+                md.append("**Hashtags:** " + " ".join(hashtags))
+                md.append("")
+            if img:
+                md.append("**Prompt de Imagem:**")
+                md.append(f"```\n{img}\n```")
+                md.append("")
+            if voice:
+                md.append("**Script de Voz (ElevenLabs):**")
+                md.append(f"```\n{voice}\n```")
+                md.append("")
 
     # ========================================================================
     # ESCREVER FICHEIRO
