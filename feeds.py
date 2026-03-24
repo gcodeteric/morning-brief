@@ -18,7 +18,7 @@ FEEDS = [
     {"url": "https://racesimcentral.net/feed/", "cat": "sim_racing", "p": 9, "name": "Race Sim Central"},
     {"url": "https://simracingsetup.com/feed/", "cat": "sim_racing", "p": 8, "name": "SimRacingSetup"},
     {"url": "https://simracingcockpit.gg/feed/", "cat": "sim_racing", "p": 8, "name": "SimRacingCockpit.gg"},
-    {"url": "https://racinggames.gg/feed/", "cat": "racing_games", "p": 8, "name": "RacingGames.gg"},
+    {"url": "https://racinggames.gg/feed/atom/", "cat": "racing_games", "p": 8, "name": "RacingGames.gg"},
 
     # =========================================================================
     # TIER 1 — Sim Official Blogs (priority 7-10)
@@ -26,10 +26,10 @@ FEEDS = [
     {"url": "https://www.iracing.com/feed/", "cat": "sim_racing", "p": 10, "name": "iRacing News"},
     {"url": "https://www.assettocorsa.gg/feed/", "cat": "sim_racing", "p": 9, "name": "Kunos AC EVO"},
     {"url": "https://www.studio-397.com/feed/", "cat": "sim_racing", "p": 8, "name": "Studio 397 LMU"},
-    {"url": "https://www.beamng.com/feed/", "cat": "sim_racing", "p": 7, "name": "BeamNG Blog"},
+    {"url": "https://www.beamng.com/blog/index.rss", "cat": "sim_racing", "p": 7, "name": "BeamNG Blog"},
     {"url": "https://forum.reizastudios.com/forums/-/index.rss", "cat": "sim_racing", "p": 7, "name": "Reiza Forum"},
     {"url": "https://rennsport.gg/feed/", "cat": "sim_racing", "p": 7, "name": "Rennsport"},
-    {"url": "https://www.raceroomracingexperience.com/feed/", "cat": "sim_racing", "p": 6, "name": "RaceRoom"},
+    {"url": "https://www.raceroomracingexperience.com/news/feed/", "cat": "sim_racing", "p": 6, "name": "RaceRoom"},
 
     # =========================================================================
     # TIER 1 — Nostalgia Official (priority 7-10)
@@ -60,19 +60,19 @@ FEEDS = [
     {"url": "https://boostedmedia.net/feed/", "cat": "hardware", "p": 7, "name": "Boosted Media"},
     {"url": "https://coachdaveacademy.com/feed/", "cat": "sim_racing", "p": 6, "name": "Coach Dave Academy"},
     {"url": "https://blog.gridfinder.com/feed/", "cat": "community", "p": 5, "name": "Grid Finder Blog"},
-    {"url": "https://simrace247.com/feed/", "cat": "sim_racing", "p": 6, "name": "SimRace247"},
+    # {"url": "https://simrace247.com/feed/", "cat": "sim_racing", "p": 6, "name": "SimRace247"},
     {"url": "https://onlineracedriver.com/feed/", "cat": "sim_racing", "p": 5, "name": "OnlineRaceDriver"},
     {"url": "https://isrtv.com/feed/", "cat": "sim_racing", "p": 5, "name": "Inside Sim Racing"},
     {"url": "https://simracing-pc.de/en/feed/", "cat": "hardware", "p": 5, "name": "SimRacing-PC"},
-    {"url": "https://randomcallsign.com/blog-feed.xml", "cat": "sim_racing", "p": 6, "name": "Random Callsign"},
+    # {"url": "https://randomcallsign.com/blog-feed.xml", "cat": "sim_racing", "p": 6, "name": "Random Callsign"},
     {"url": "https://apexsimracing.com/blogs/sim-racing-blog.atom", "cat": "hardware", "p": 5, "name": "Apex Sim Racing"},
     {"url": "https://vco-esports.com/feed/", "cat": "esports", "p": 6, "name": "VCO Esports"},
-    {"url": "https://simracing.gp/sgp-blog/feed", "cat": "community", "p": 5, "name": "SimRacing.GP"},
-    {"url": "https://simracingdeal.com/feed/", "cat": "deals", "p": 5, "name": "SimRacingDeal"},
-    {"url": "https://www.drivingitalia.net/feed/", "cat": "sim_racing", "p": 4, "name": "DrivingItalia"},
-    {"url": "https://vracingnews.de/feed/", "cat": "sim_racing", "p": 4, "name": "vRacingnews DE"},
-    {"url": "https://fanatec.com/blog/feed/", "cat": "hardware", "p": 7, "name": "Fanatec Blog"},
-    {"url": "https://mozaracing.com/blog/feed/", "cat": "hardware", "p": 7, "name": "MOZA Blog"},
+    {"url": "https://simracing.gp/sgp-blog/feed/", "cat": "community", "p": 5, "name": "SimRacing.GP"},
+    # {"url": "https://simracingdeal.com/feed/", "cat": "deals", "p": 5, "name": "SimRacingDeal"},
+    {"url": "https://www.drivingitalia.net/feed/?lang=en", "cat": "sim_racing", "p": 4, "name": "DrivingItalia"},
+    # {"url": "https://vracingnews.de/feed/", "cat": "sim_racing", "p": 4, "name": "vRacingnews DE"},
+    {"url": "https://fanatec.com/eu-en/racing-hardware/blog/feed/", "cat": "hardware", "p": 7, "name": "Fanatec Blog"},
+    {"url": "https://en.mozaracing.com/blogs/news.atom", "cat": "hardware", "p": 7, "name": "MOZA Blog"},
     # REMOVIDO: FlightSim.com feed inactivo em 2026
     {"url": "https://msfsaddons.com/feed/", "cat": "nostalgia", "p": 5, "name": "MSFS Addons"},
 

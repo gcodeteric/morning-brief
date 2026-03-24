@@ -102,6 +102,13 @@ THRESHOLD: approved = true APENAS se average >= 7.0
 }
 
 
+def _clean_output(text: str) -> str:
+    """Remove blocos <think> de modelos de raciocínio como MiniMax M2.7."""
+    import re
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    return text.strip()
+
+
 def run_agent(agent_name: str, user_input: str, context: str = "") -> str:
     # Proteção: key não configurada → não faz chamada, não rebenta dry-run
     if not MINIMAX_API_KEY or "COLOCA_AQUI" in MINIMAX_API_KEY or client is None:
@@ -124,7 +131,7 @@ def run_agent(agent_name: str, user_input: str, context: str = "") -> str:
             max_tokens=1500,
             temperature=0.75
         )
-        return response.choices[0].message.content or ""
+        return _clean_output(response.choices[0].message.content or "")
     except Exception as e:
         logger.warning(f"Agente {agent_name} falhou: {e}")
         return ""
