@@ -28,8 +28,20 @@ Recebes um artigo e devolves EXATAMENTE este JSON (zero texto extra):
   "emotion": "hype|informativo|polémico|inspirador|nostalgia",
   "twist": "facto ou ângulo que a maioria ignora (1-2 frases)",
   "hook_suggestion": "primeira linha sugerida para o post",
-  "avoid": "o que NÃO dizer neste post"
+  "avoid": "o que NÃO dizer neste post",
+  "instagram_format": "carousel_explainer|carousel_breaking|carousel_comparison|reel_fast_update",
+  "visual_strength": 0,
+  "why_it_matters": "explica em 1-2 frases porque esta notícia importa para a comunidade",
+  "community_question": "uma pergunta aberta e forte para comentários"
 }
+
+REGRAS ADICIONAIS:
+- "carousel_explainer" para notícias técnicas, updates e mudanças com contexto
+- "carousel_breaking" para breaking news e anúncios fortes
+- "carousel_comparison" para comparações, "vale a pena?" e mudanças de produto
+- "reel_fast_update" apenas se a notícia for muito visual e rápida
+- "visual_strength" vai de 0 a 10
+- Se a notícia não for muito visual, tende para carousel, não Reel
 """,
 
 "copywriter": """
@@ -43,12 +55,34 @@ IDENTIDADE DA MARCA:
 
 REGRAS:
 • Usa o hook_suggestion do Analyst como ponto de partida (podes melhorar)
-• Estrutura: Hook → Contexto → Twist → Fechamento (4 parágrafos máx)
+• O output serve primeiro Instagram
+• Cada post gira em torno de UMA ideia central
+• cover_hook curto e forte
+• slides: máximo 5, 1 ideia por slide, texto curto, claro e escaneável
+• caption: complementar os slides, não repetir tudo, máximo 4 parágrafos curtos
 • 1 emoji por parágrafo máx, CTA implícito nunca forçado
+• Inclui "porque isto importa" de forma natural
+• Usa a community_question do Analyst como base
 • PROIBIDO: "revolucionário" "incrível" "fantástico" "não percas" "imperdível"
+• PROIBIDO: "épico"
 • Evita o que o Analyst indicou em "avoid"
 
-OUTPUT: post completo PT-PT sem hashtags (vêm do QA).
+Devolve EXATAMENTE este JSON (zero texto extra):
+{
+  "format": "carousel_explainer|carousel_breaking|carousel_comparison|reel_fast_update",
+  "cover_hook": "headline curta e forte para a capa",
+  "slides": [
+    "texto do slide 1",
+    "texto do slide 2",
+    "texto do slide 3",
+    "texto do slide 4",
+    "texto do slide 5"
+  ],
+  "caption": "caption completa em PT-PT",
+  "community_question": "pergunta final para comentários",
+  "cta_style": "implicit",
+  "notes_for_design": "instruções curtas para layout visual"
+}
 """,
 
 "image_director": """
@@ -84,20 +118,27 @@ OUTPUT: clean script only, ready to paste into ElevenLabs.
 Devolves EXATAMENTE este JSON (zero texto extra):
 {
   "scores": {
-    "hook": 0-10,
-    "depth": 0-10,
-    "brand_voice": 0-10,
-    "legal_clear": 0-10,
-    "cta_quality": 0-10
+    "hook": 0,
+    "depth": 0,
+    "brand_voice": 0,
+    "legal_clear": 0,
+    "cta_quality": 0,
+    "carousel_clarity": 0,
+    "stop_scroll_value": 0
   },
-  "average": float,
+  "average": 0.0,
   "approved": true/false,
   "hashtags": ["15 hashtags mix PT+EN específicas"],
   "issues": ["problemas — lista vazia se aprovado"],
   "improved_hook": "reescrito APENAS se hook < 7, senão null",
   "improved_post": "reescrito APENAS se average < 7.0, senão null"
 }
-THRESHOLD: approved = true APENAS se average >= 7.0
+REGRAS:
+- "carousel_clarity" avalia se os slides seguem ordem lógica e são fáceis de consumir
+- "stop_scroll_value" avalia se a capa / hook faz parar o scroll
+- approved = true APENAS se average >= 7.0
+- Se hook < 7, preencher improved_hook
+- Se average < 7.0, preencher improved_post
 """
 }
 
@@ -113,6 +154,41 @@ def _clean_output(text: str) -> str:
     # Remove caracteres não-latinos isolados (artefactos de modelos multilíngue)
     text = re.sub(r'[^\x00-\x7FÀ-ÿ\u0080-\u024F\n\r\t{}\[\]",:./\-_@#!?()0-9 ]', '', text)
     return text.strip()
+
+
+def _compose_instagram_post(instagram_pack: dict) -> str:
+    """Converte o pack estruturado do Copywriter em texto legível para o brief."""
+    if not isinstance(instagram_pack, dict) or not instagram_pack:
+        return ""
+
+    lines = []
+    cover_hook = instagram_pack.get("cover_hook")
+    slides = instagram_pack.get("slides", [])
+    caption = instagram_pack.get("caption")
+    community_question = instagram_pack.get("community_question")
+
+    if cover_hook:
+        lines.append(f"Cover Hook: {cover_hook}")
+
+    if isinstance(slides, list) and slides:
+        lines.append("Slides:")
+        for i, slide in enumerate(slides[:5], 1):
+            if slide:
+                lines.append(f"{i}. {slide}")
+
+    if caption:
+        if lines:
+            lines.append("")
+        lines.append("Caption:")
+        lines.append(caption)
+
+    if community_question:
+        if lines:
+            lines.append("")
+        lines.append("Pergunta à comunidade:")
+        lines.append(community_question)
+
+    return "\n".join(lines).strip()
 
 
 def run_agent(agent_name: str, user_input: str, context: str = "") -> str:
@@ -155,7 +231,20 @@ def run_full_pipeline(article: dict) -> dict:
     logger.info(f"Pipeline: '{article.get('title','')[:50]}'")
 
     analysis = run_agent("analyst", summary)
-    post = run_agent("copywriter", summary, analysis)
+    raw_post = run_agent("copywriter", summary, analysis)
+
+    instagram_pack = {}
+    post = raw_post
+    try:
+        parsed_pack = json.loads(raw_post)
+        if isinstance(parsed_pack, dict):
+            instagram_pack = parsed_pack
+            composed_post = _compose_instagram_post(instagram_pack)
+            if composed_post:
+                post = composed_post
+    except Exception:
+        pass
+
     img_prompt = run_agent("image_director", post, analysis)
     voice = run_agent("voice_director", post)
     qa_result = run_agent("qa", post)
@@ -173,8 +262,9 @@ def run_full_pipeline(article: dict) -> dict:
         "article": article,
         "analysis": analysis,
         "post": final_post,
+        "instagram_pack": instagram_pack,
         "image_prompt": img_prompt,
         "voice_script": voice,
         "qa": qa_result,
-        "raw_post": post,
+        "raw_post": raw_post,
     }

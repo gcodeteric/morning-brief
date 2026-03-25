@@ -293,6 +293,12 @@ def format_brief(curated, output_path, plan=None, card_paths=None):
             md.append(f"- {channel} → alternativa {alt_idx}")
         md.append("")
 
+    md.append("## Recomendação editorial Instagram")
+    md.append("- Ritmo recomendado nesta fase: 1 post a cada 2 dias")
+    md.append("- Prioridade: qualidade > frequência")
+    md.append("- Só subir para diário quando houver consistência editorial e visual durante várias semanas")
+    md.append("")
+
     # ====================================================================
     # SECÇÃO 2: PROMPTS EDITORIAIS v3
     # ====================================================================
@@ -362,12 +368,17 @@ Score: {ig_moto_e.get('score', 0)}/100
 {f"CONTEXTO DO DIA: {day_context}" if day_context else ""}
 
 TAREFA — Para CADA post gera:
+0. Para cada post, estrutura primeiro a lógica editorial antes de escrever a caption
 1. Caption completa (hook forte primeira linha, máx 2200 chars)
 2. POST 1 — formato {ig_manha}: {"5-7 slides, texto por slide, CTA no último" if ig_manha == "Carrossel" else "conceito visual, texto overlay 3-5 secções, ~30s"}
    POST 2 — formato {ig_tarde}: {"conceito visual, texto overlay 3-5 secções, ~30s" if ig_tarde == "Reel" else "5-7 slides, texto por slide, CTA no último"}
 3. 15-20 hashtags por post (mix PT + EN, específicas do tema)
 
 REGRAS:
+- O formato por defeito deve ser carrossel editorial.
+- Só usar Reel se a notícia tiver força visual clara e funcionar bem em formato rápido.
+- Cada post deve centrar-se numa ideia principal, não num resumo genérico da notícia.
+- Estrutura editorial recomendada: Hook -> O que aconteceu -> Porque importa -> O detalhe que quase ninguém viu -> Pergunta final
 - Cada post tem valor standalone
 - Emojis com moderação
 - Nunca preços, nunca venda directa
@@ -568,6 +579,7 @@ REGRAS:
             qa_raw   = output.get("qa", "")
             img      = output.get("image_prompt", "")
             voice    = output.get("voice_script", "")
+            instagram_pack = output.get("instagram_pack", {})
 
             # Parse QA — tolerante a falhas parciais
             qa_score    = "N/A"
@@ -594,6 +606,27 @@ REGRAS:
             if issues:
                 md.append(f"**Issues:** {', '.join(issues)}")
             md.append("")
+
+            if isinstance(instagram_pack, dict) and instagram_pack:
+                slides = instagram_pack.get("slides", [])
+                md.append(f"**Formato Instagram:** {instagram_pack.get('format', 'N/A')}")
+                md.append("")
+                md.append(f"**Cover Hook:** {instagram_pack.get('cover_hook', '')}")
+                md.append("")
+                if isinstance(slides, list) and slides:
+                    md.append("**Slides:**")
+                    for j, slide in enumerate(slides[:5], 1):
+                        md.append(f"{j}. {slide}")
+                    md.append("")
+                if instagram_pack.get("caption"):
+                    md.append(f"**Caption:** {instagram_pack.get('caption', '')}")
+                    md.append("")
+                if instagram_pack.get("community_question"):
+                    md.append(f"**Pergunta à comunidade:** {instagram_pack.get('community_question', '')}")
+                    md.append("")
+                if instagram_pack.get("notes_for_design"):
+                    md.append(f"**Notas para design:** {instagram_pack.get('notes_for_design', '')}")
+                    md.append("")
 
             if post:
                 md.append(post)
