@@ -11,7 +11,7 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "").strip()
+MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "sk-api-06zpUzFlX4H7hlOmmnhjadMfFwhgpyNV97GRIJtdPb_XgqnQRxShmpg8gqXDZ0pYyCmp61HT1uamzLwKlHSPVc1KTBH1nBG8uELK4R8mh254BfxRGy7AKGk").strip()
 MINIMAX_BASE_URL = "https://api.minimax.io/v1"
 MODEL = "MiniMax-M2.7"
 
