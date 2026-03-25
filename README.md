@@ -176,3 +176,27 @@ Também existe o ficheiro:
 Ao fazer duplo clique:
 - cria o `manual_overrides.json` se ainda não existir
 - abre o JSON para edição rápida no Windows
+
+## Envio automático por email
+
+O sistema pode enviar automaticamente o content pack diário por email após gerar o brief.
+
+Configurar no `config.py`:
+
+- `SEND_EMAIL_DIGEST = True`
+- `EMAIL_SMTP_HOST`
+- `EMAIL_SMTP_PORT`
+- `EMAIL_SMTP_USER`
+- `EMAIL_SMTP_PASSWORD`
+- `EMAIL_FROM`
+- `EMAIL_TO`
+
+Opções:
+
+- `EMAIL_ATTACH_MARKDOWN = True` → anexa o `.md`
+- `EMAIL_ATTACH_CARDS = True` → anexa os social cards gerados
+
+Recomendação:
+usar SMTP do Gmail, Outlook ou outro fornecedor equivalente.
+
+Se o envio falhar, o brief continua a ser gerado normalmente.

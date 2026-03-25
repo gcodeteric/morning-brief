@@ -38,6 +38,19 @@ MAX_PER_SOURCE_YOUTUBE = 1  # Máximo de artigos por canal YouTube por brief
 # Mudar para True depois de colocar fontes e logo em assets/
 GENERATE_IMAGES = False
 
+# --- Email digest delivery ---
+SEND_EMAIL_DIGEST = False   # mudar para True quando SMTP estiver configurado
+
+EMAIL_SMTP_HOST = ""
+EMAIL_SMTP_PORT = 587
+EMAIL_SMTP_USER = ""
+EMAIL_SMTP_PASSWORD = ""
+EMAIL_FROM = ""
+EMAIL_TO = ""
+
+EMAIL_ATTACH_MARKDOWN = True
+EMAIL_ATTACH_CARDS = True
+
 # Criar pastas se não existirem
 for d in [LOG_DIR, ARCHIVE_DIR, OUTPUT_DIR, DATA_DIR]:
     d.mkdir(parents=True, exist_ok=True)

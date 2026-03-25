@@ -10,6 +10,9 @@ from datetime import datetime
 from config import (
     LOG_DIR, ARCHIVE_DIR, OUTPUT_FILE, RUN_SUMMARY_FILE, DATA_DIR,
     GENERATE_IMAGES,
+    SEND_EMAIL_DIGEST, EMAIL_SMTP_HOST, EMAIL_SMTP_PORT, EMAIL_SMTP_USER,
+    EMAIL_SMTP_PASSWORD, EMAIL_FROM, EMAIL_TO, EMAIL_ATTACH_MARKDOWN,
+    EMAIL_ATTACH_CARDS,
 )
 from planner import plan as run_planner
 
@@ -231,6 +234,36 @@ def main(dry_run: bool = False):
                 check_and_alert(summary)
             except Exception as e:
                 logging.warning(f"Alerts falharam (não crítico): {e}")
+
+            if SEND_EMAIL_DIGEST:
+                try:
+                    from email_digest import build_email_digest, send_email_digest
+
+                    digest = build_email_digest(
+                        curated=curated,
+                        plan=editorial_plan or {},
+                        output_path=OUTPUT_FILE,
+                        card_paths=card_paths if 'card_paths' in locals() else {}
+                    )
+
+                    smtp_config = {
+                        "host": EMAIL_SMTP_HOST,
+                        "port": EMAIL_SMTP_PORT,
+                        "user": EMAIL_SMTP_USER,
+                        "password": EMAIL_SMTP_PASSWORD,
+                        "from": EMAIL_FROM,
+                        "to": EMAIL_TO,
+                        "attach_markdown": EMAIL_ATTACH_MARKDOWN,
+                        "attach_cards": EMAIL_ATTACH_CARDS,
+                    }
+
+                    sent = send_email_digest(digest, smtp_config)
+                    if sent:
+                        logging.info("Email digest enviado com sucesso")
+                    else:
+                        logging.warning("Email digest não enviado (config incompleta ou falha SMTP)")
+                except Exception as e:
+                    logging.warning(f"Email digest falhou (não crítico): {e}")
         else:
             logging.info(
                 "DRY RUN concluído — %d artigos seleccionados, brief NÃO guardado",
