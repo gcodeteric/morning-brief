@@ -170,6 +170,15 @@ def main(dry_run: bool = False):
         except Exception as e:
             logging.warning(f"Planner falhou (não crítico): {e}")
 
+        try:
+            from manual_overrides import load_manual_overrides, apply_manual_overrides
+            overrides = load_manual_overrides()
+            if overrides and editorial_plan:
+                editorial_plan = apply_manual_overrides(editorial_plan, overrides)
+                logging.info("Manual overrides aplicados")
+        except Exception as e:
+            logging.warning(f"Manual overrides falharam (não crítico): {e}")
+
         # Cards (import lazy — depende de Pillow/assets opcionais)
         card_paths = {}
         if GENERATE_IMAGES and not dry_run:

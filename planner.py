@@ -34,6 +34,23 @@ def _best_by_category(articles, category):
     return max(candidates, key=lambda x: x.get("score", 0))
 
 
+def _top_by_category(articles, category, limit=3, exclude=None):
+    exclude = exclude or []
+    candidates = [
+        a for a in articles
+        if a.get("category") == category and a not in exclude
+    ]
+    candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
+    return candidates[:limit]
+
+
+def _top_distinct_articles(articles, limit=3, exclude=None):
+    exclude = exclude or []
+    candidates = [a for a in articles if a not in exclude]
+    candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
+    return candidates[:limit]
+
+
 def _reddit_eligible(articles):
     """
     Artigos elegíveis para Reddit:
@@ -80,6 +97,25 @@ def _youtube_daily_candidate(articles):
 
     logger.info("Planner: sem candidato válido para YouTube daily (todos eram Shorts ou lista vazia)")
     return None
+
+
+def _youtube_daily_alternatives(articles, primary, limit=2):
+    priority_keywords = [
+        "review", "first look", "hands-on", "update", "patch",
+        "release", "launch", "new", "announce",
+    ]
+    candidates = [
+        a for a in articles
+        if "youtube.com/shorts" not in a.get("link", "") and a != primary
+    ]
+
+    def priority_score(a):
+        title_lower = a.get("title", "").lower()
+        kw_bonus = sum(1 for kw in priority_keywords if kw in title_lower) * 10
+        return a.get("score", 0) + kw_bonus
+
+    candidates.sort(key=priority_score, reverse=True)
+    return candidates[:limit]
 
 
 def _pick_distinct_secondary(selected, primary):
@@ -234,21 +270,55 @@ def plan(curated):
     if discord_post is None:
         logger.info("Planner: Discord silêncio hoje — score abaixo do threshold")
 
+    ig_sim_alternatives = _top_by_category(selected, "sim_racing", limit=2, exclude=[ig_sim] if ig_sim else [])
+
+    ig_moto_alternatives = _top_by_category(selected, "motorsport", limit=2, exclude=[ig_moto] if ig_moto else [])
+    if len(ig_moto_alternatives) < 2:
+        extra = _top_distinct_articles(
+            selected,
+            limit=2,
+            exclude=([ig_moto] if ig_moto else []) + ig_moto_alternatives
+        )
+        for article in extra:
+            if article not in ig_moto_alternatives and len(ig_moto_alternatives) < 2:
+                ig_moto_alternatives.append(article)
+
+    yt_daily_alternatives = _youtube_daily_alternatives(selected, yt_daily, limit=2)
+
+    discord_candidates = [
+        a for a in selected
+        if a.get("score", 0) >= DISCORD_MIN_SCORE
+    ]
+    discord_post_alternatives = _top_distinct_articles(
+        discord_candidates,
+        limit=2,
+        exclude=[discord_post] if discord_post else []
+    )
+
     result = {
         "instagram_sim_racing": ig_sim,
+        "instagram_sim_racing_alternatives": ig_sim_alternatives,
         "instagram_motorsport": ig_moto,
+        "instagram_motorsport_alternatives": ig_moto_alternatives,
         "x_thread_1": ig_sim,
+        "x_thread_1_alternatives": list(ig_sim_alternatives),
         "x_thread_2": ig_moto,
+        "x_thread_2_alternatives": list(ig_moto_alternatives),
         "youtube_daily": yt_daily,
+        "youtube_daily_alternatives": yt_daily_alternatives,
         "youtube_weekly": yt_weekly,  # memória semanal real via weekly_cache.json
         "reddit_candidates": reddit,
         "discord_post": discord_post,
+        "discord_post_alternatives": discord_post_alternatives,
         "is_sunday": is_sunday,
     }
 
     logger.info(f"Planner: IG sim={ig_sim['title'][:40] if ig_sim else 'None'}")
     logger.info(f"Planner: IG moto={ig_moto['title'][:40] if ig_moto else 'None'}")
     logger.info(f"Planner: YT daily={yt_daily['title'][:40] if yt_daily else 'None'}")
+    logger.info(f"Planner: IG sim alternatives={len(ig_sim_alternatives)}")
+    logger.info(f"Planner: IG moto alternatives={len(ig_moto_alternatives)}")
+    logger.info(f"Planner: YT daily alternatives={len(yt_daily_alternatives)}")
     logger.info(f"Planner: Reddit={len(reddit)} candidatos | Discord={'SIM' if discord_post else 'SILÊNCIO'}")
     logger.info(f"Planner: Domingo={is_sunday}")
 

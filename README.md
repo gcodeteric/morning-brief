@@ -145,3 +145,34 @@ Quando pronto:
 1. Colocar os 3 ficheiros obrigatórios em assets/
 2. Definir GENERATE_IMAGES = True em config.py
 3. pip install Pillow
+
+## Overrides manuais por canal
+
+Podes forçar o sistema a usar alternativas diferentes criando:
+
+`data/manual_overrides.json`
+
+Formato:
+
+- `0` = escolha principal
+- `1` = alternativa 1
+- `2` = alternativa 2
+
+Exemplo:
+
+```json
+{
+  "instagram_sim_racing": 1,
+  "youtube_daily": 2
+}
+```
+
+Se o ficheiro não existir, o sistema usa automaticamente as escolhas principais do planner.
+
+Também existe o ficheiro:
+
+`abrir_overrides_json.bat`
+
+Ao fazer duplo clique:
+- cria o `manual_overrides.json` se ainda não existir
+- abre o JSON para edição rápida no Windows

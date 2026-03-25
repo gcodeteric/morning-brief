@@ -108,6 +108,41 @@ def _generate_news_block(selected):
         lines.append("")
     return "\n".join(lines)
 
+
+def _format_channel_options(channel_name, primary, alternatives):
+    primary = primary or {}
+    alternatives = alternatives or []
+
+    def _format_option(label, article):
+        if not article:
+            return [
+                f"{label}:",
+                "Sem artigo disponível.",
+                "",
+            ]
+        return [
+            f"{label}:",
+            f"- Título: {article.get('title', 'Sem título')}",
+            f"- Fonte: {article.get('source', 'Fonte desconhecida')}",
+            f"- Categoria: {article.get('category', 'unknown')}",
+            f"- Score: {article.get('score', 0)}",
+            f"- Link: {article.get('link', '')}",
+            "",
+        ]
+
+    lines = [f"## {channel_name}", ""]
+    lines.extend(_format_option("Principal", primary))
+
+    if alternatives:
+        for i, article in enumerate(alternatives[:2], 1):
+            lines.extend(_format_option(f"Alternativa {i}", article))
+    else:
+        lines.append("Sem alternativa disponível.")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def _enrich_article(article: dict) -> dict:
     """Expande o artigo com campos calculados para prompts mais ricos."""
     summary = article.get("summary") or ""
@@ -215,6 +250,48 @@ def format_brief(curated, output_path, plan=None, card_paths=None):
         emoji = CATEGORY_EMOJI.get(cat, "📰")
         md.append(f"- {emoji} **{cat}**: {count}")
     md.append("")
+
+    # --- ESCOLHAS DO PLANNER E ALTERNATIVAS ---
+    md.append("---")
+    md.append("")
+    md.append("# 🎛️ ESCOLHAS DO PLANNER E ALTERNATIVAS")
+    md.append("")
+    md.append(_format_channel_options(
+        "Instagram — Sim Racing",
+        plan.get("instagram_sim_racing"),
+        plan.get("instagram_sim_racing_alternatives", []),
+    ))
+    md.append(_format_channel_options(
+        "Instagram — Motorsport",
+        plan.get("instagram_motorsport"),
+        plan.get("instagram_motorsport_alternatives", []),
+    ))
+    md.append(_format_channel_options(
+        "X/Twitter — Thread 1",
+        plan.get("x_thread_1"),
+        plan.get("x_thread_1_alternatives", []),
+    ))
+    md.append(_format_channel_options(
+        "X/Twitter — Thread 2",
+        plan.get("x_thread_2"),
+        plan.get("x_thread_2_alternatives", []),
+    ))
+    md.append(_format_channel_options(
+        "YouTube — Daily",
+        plan.get("youtube_daily"),
+        plan.get("youtube_daily_alternatives", []),
+    ))
+    md.append(_format_channel_options(
+        "Discord",
+        plan.get("discord_post"),
+        plan.get("discord_post_alternatives", []),
+    ))
+
+    if plan.get("manual_overrides_applied"):
+        md.append("## Overrides manuais aplicados")
+        for channel, alt_idx in (plan.get("override_summary") or {}).items():
+            md.append(f"- {channel} → alternativa {alt_idx}")
+        md.append("")
 
     # ====================================================================
     # SECÇÃO 2: PROMPTS EDITORIAIS v3
