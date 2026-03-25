@@ -130,6 +130,7 @@ YOUTUBE_EMOJI_RE = re.compile(
 
 def _canonicalize_url(url):
     """Normaliza URL para dedup: remove query params de tracking, www, trailing slash."""
+    url = (url or "").strip()
     try:
         parsed = urlparse(url)
         # Remover www
@@ -152,7 +153,7 @@ def _canonicalize_url(url):
 
 def _normalize_title(title):
     """Normaliza título para comparação: lowercase, sem pontuação, sem stopwords."""
-    title = title.lower()
+    title = (title or "").lower()
     title = title.translate(str.maketrans("", "", string.punctuation))
     tokens = title.split()
     tokens = [t for t in tokens if t not in STOPWORDS and len(t) > 1]
@@ -216,9 +217,9 @@ def _score_article(article):
     score = 0
 
     # Base: priority * 3 (max 30)
-    score += min(article["priority"] * 3, 30)
+    score += min(article.get("priority", 0) * 3, 30)
 
-    text = f"{article['title']} {article.get('summary', '')}".lower()
+    text = f"{article.get('title', 'Sem título')} {article.get('summary', '')}".lower()
 
     # Keywords alta relevância: +5 cada (max 20)
     kw_bonus = 0
@@ -364,6 +365,63 @@ def _save_seen_links(seen):
         logger.warning(f"Erro ao guardar seen_links: {e}")
 
 
+def _coerce_priority(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _normalize_article(article):
+    """Normaliza artigos incompletos e descarta os que não têm mínimos editoriais."""
+    if not isinstance(article, dict):
+        logger.warning("Curator: artigo descartado por formato inválido")
+        return None
+
+    normalized = dict(article)
+    title = str(normalized.get("title") or "").strip()
+    summary = str(normalized.get("summary") or "").strip()
+    source = str(normalized.get("source") or "").strip()
+    link = str(normalized.get("link") or "").strip()
+    category = str(normalized.get("category") or "unknown").strip() or "unknown"
+    priority = _coerce_priority(normalized.get("priority", 0))
+
+    if not title and not summary:
+        logger.info("Curator: artigo descartado por falta de title/summary")
+        return None
+    if not source:
+        logger.info("Curator: artigo descartado por falta de link/title/source")
+        return None
+    if not link and not title:
+        logger.info("Curator: artigo descartado por falta de link/title/source")
+        return None
+
+    missing_fields = []
+    if not title:
+        missing_fields.append("title")
+    if not link:
+        missing_fields.append("link")
+    if "category" not in normalized or not normalized.get("category"):
+        missing_fields.append("category")
+    if "priority" not in normalized or normalized.get("priority") in (None, ""):
+        missing_fields.append("priority")
+
+    normalized["title"] = title or "Sem título"
+    normalized["summary"] = summary or ""
+    normalized["source"] = source or "Fonte desconhecida"
+    normalized["link"] = link or ""
+    normalized["category"] = category
+    normalized["priority"] = priority
+
+    if missing_fields:
+        logger.info(
+            "Curator: artigo incompleto normalizado com defaults (%s)",
+            ", ".join(missing_fields),
+        )
+
+    return normalized
+
+
 def curate_articles(articles):
     """
     Recebe lista crua do scanner, deduplica, pontua, seleciona top 15.
@@ -379,16 +437,23 @@ def curate_articles(articles):
 
     total_before = len(articles)
 
+    normalized_articles = []
+    for article in articles:
+        normalized = _normalize_article(article)
+        if normalized is not None:
+            normalized_articles.append(normalized)
+    articles = normalized_articles
+
     filtered_articles = []
     for article in articles:
         is_youtube_article = _is_youtube_source(article)
 
         if is_youtube_article and _youtube_summary_useful_length(article.get("summary", "")) < 20:
-            logger.info(f"FILTRADO: resumo YouTube vazio/curto — {article['title']}")
+            logger.info(f"FILTRADO: resumo YouTube vazio/curto — {article.get('title', 'Sem título')}")
             continue
 
         if _is_youtube_channel_noise(article):
-            logger.info(f"FILTRADO: descrição de canal YouTube — {article['title']}")
+            logger.info(f"FILTRADO: descrição de canal YouTube — {article.get('title', 'Sem título')}")
             continue
 
         filtered_articles.append(article)
@@ -400,10 +465,13 @@ def curate_articles(articles):
     seen_urls = {}
     deduped_by_url = []
     for article in articles:
-        canon = _canonicalize_url(article["link"])
+        canon = _canonicalize_url(article.get("link", ""))
+        if not canon:
+            deduped_by_url.append(article)
+            continue
         if canon in seen_urls:
             existing = seen_urls[canon]
-            if article["priority"] > existing["priority"]:
+            if article.get("priority", 0) > existing.get("priority", 0):
                 deduped_by_url.remove(existing)
                 deduped_by_url.append(article)
                 seen_urls[canon] = article
@@ -417,11 +485,11 @@ def curate_articles(articles):
     deduped_by_title = []
     title_tokens_list = []
     for article in deduped_by_url:
-        tokens = _normalize_title(article["title"])
+        tokens = _normalize_title(article.get("title", "Sem título"))
         is_dup = False
         for i, existing_tokens in enumerate(title_tokens_list):
             if _title_similarity(tokens, existing_tokens) > 0.55:
-                if article["priority"] > deduped_by_title[i]["priority"]:
+                if article.get("priority", 0) > deduped_by_title[i].get("priority", 0):
                     deduped_by_title[i] = article
                     title_tokens_list[i] = tokens
                 is_dup = True
@@ -434,10 +502,12 @@ def curate_articles(articles):
     # Dedup camada 3: Cross-dia (seen_links.json) — por URL canónica + título
     # ========================================================================
     seen_links = _load_seen_links()
-    deduped_by_seen_url = [
-        a for a in deduped_by_title
-        if _canonicalize_url(a["link"]) not in seen_links
-    ]
+    deduped_by_seen_url = []
+    for article in deduped_by_title:
+        canon = _canonicalize_url(article.get("link", ""))
+        if canon and canon in seen_links:
+            continue
+        deduped_by_seen_url.append(article)
 
     seen_title_tokens = {
         link: _normalize_title(entry.get("title", ""))
@@ -447,13 +517,13 @@ def curate_articles(articles):
 
     deduped = []
     for article in deduped_by_seen_url:
-        tokens = _normalize_title(article["title"])
+        tokens = _normalize_title(article.get("title", "Sem título"))
         is_seen_title = False
         for existing_tokens in seen_title_tokens.values():
             if _title_similarity(tokens, existing_tokens) > 0.55:
                 logger.info(
                     "Dedup cross-dia: '%s' similar a visto anteriormente",
-                    article["title"][:60],
+                    article.get("title", "Sem título")[:60],
                 )
                 is_seen_title = True
                 break
@@ -475,11 +545,11 @@ def curate_articles(articles):
         if isinstance(entry, dict) and "source" in entry:
             recent_sources.add(entry["source"])
     for article in deduped:
-        if article["source"] not in recent_sources:
-            article["score"] = min(article["score"] + 5, 100)
+        if article.get("source", "Fonte desconhecida") not in recent_sources:
+            article["score"] = min(article.get("score", 0) + 5, 100)
 
     # Ordenar por score desc
-    deduped.sort(key=lambda a: a["score"], reverse=True)
+    deduped.sort(key=lambda a: a.get("score", 0), reverse=True)
 
     # ========================================================================
     # Instrumentação nostalgia — observabilidade sem alterar seleção
@@ -503,35 +573,37 @@ def curate_articles(articles):
     for cat, min_count in GUARANTEE_CATEGORIES.items():
         cat_articles = [
             (i, a) for i, a in enumerate(deduped)
-            if a["category"] == cat and i not in used_indices
-            and a["score"] >= MIN_RELEVANCE_SCORE
-            and source_counts.get(a["source"], 0) < _max_articles_for_source(a)
+            if a.get("category", "unknown") == cat and i not in used_indices
+            and a.get("score", 0) >= MIN_RELEVANCE_SCORE
+            and source_counts.get(a.get("source", "Fonte desconhecida"), 0) < _max_articles_for_source(a)
         ]
         for j in range(min(min_count, len(cat_articles))):
             idx, article = cat_articles[j]
             selected.append(article)
             used_indices.add(idx)
-            source_counts[article["source"]] = source_counts.get(article["source"], 0) + 1
+            src = article.get("source", "Fonte desconhecida")
+            source_counts[src] = source_counts.get(src, 0) + 1
 
     # Garantir Portugal se disponível
     if GUARANTEE_PORTUGAL:
         pt_articles = [
             (i, a) for i, a in enumerate(deduped)
-            if a["category"] == "portugal" and i not in used_indices
-            and source_counts.get(a["source"], 0) < _max_articles_for_source(a)
+            if a.get("category", "unknown") == "portugal" and i not in used_indices
+            and source_counts.get(a.get("source", "Fonte desconhecida"), 0) < _max_articles_for_source(a)
         ]
         if pt_articles:
             idx, article = pt_articles[0]
             selected.append(article)
             used_indices.add(idx)
-            source_counts[article["source"]] = source_counts.get(article["source"], 0) + 1
+            src = article.get("source", "Fonte desconhecida")
+            source_counts[src] = source_counts.get(src, 0) + 1
 
     # FIX 2.1 — Preencher restantes por score COM limite por fonte
     for i, article in enumerate(deduped):
         if len(selected) >= MAX_ARTICLES_OUTPUT:
             break
-        if i not in used_indices and article["score"] >= MIN_RELEVANCE_SCORE:
-            src = article["source"]
+        if i not in used_indices and article.get("score", 0) >= MIN_RELEVANCE_SCORE:
+            src = article.get("source", "Fonte desconhecida")
             max_allowed = _max_articles_for_source(article)
             if source_counts.get(src, 0) < max_allowed:
                 selected.append(article)
@@ -544,7 +616,7 @@ def curate_articles(articles):
             if len(selected) >= MAX_ARTICLES_OUTPUT:
                 break
             if i not in used_indices:
-                src = article["source"]
+                src = article.get("source", "Fonte desconhecida")
                 max_allowed = _max_articles_for_source(article)
                 if source_counts.get(src, 0) < max_allowed:
                     selected.append(article)
@@ -552,7 +624,7 @@ def curate_articles(articles):
                     source_counts[src] = source_counts.get(src, 0) + 1
 
     # Re-ordenar selecção por score
-    selected.sort(key=lambda a: a["score"], reverse=True)
+    selected.sort(key=lambda a: a.get("score", 0), reverse=True)
 
     # Instrumentação nostalgia — resultado final
     _nostalgia_selected = sum(1 for a in selected if a.get("category") == "nostalgia")
@@ -569,12 +641,13 @@ def curate_articles(articles):
     # ========================================================================
     now_iso = datetime.now(timezone.utc).isoformat()
     for article in selected:
-        canon = _canonicalize_url(article["link"])
-        seen_links[canon] = {
-            "ts": now_iso,
-            "source": article["source"],
-            "title": article["title"][:80],
-        }
+        canon = _canonicalize_url(article.get("link", ""))
+        if canon:
+            seen_links[canon] = {
+                "ts": now_iso,
+                "source": article.get("source", "Fonte desconhecida"),
+                "title": article.get("title", "Sem título")[:80],
+            }
     _save_seen_links(seen_links)
 
     # ========================================================================
@@ -582,7 +655,7 @@ def curate_articles(articles):
     # ========================================================================
     categories = {}
     for article in selected:
-        cat = article["category"]
+        cat = article.get("category", "unknown")
         categories[cat] = categories.get(cat, 0) + 1
 
     return {

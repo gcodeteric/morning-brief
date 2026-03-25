@@ -8,7 +8,7 @@ Sistema automático que todas as manhãs te entrega um ficheiro no Desktop com a
 - Inclui 57 feeds RSS prontos a usar + suporte para ~22 canais YouTube adicionais (correr channel_id_extractor.py para activar)
 - Filtra, pontua e seleciona as 15 notícias mais relevantes
 - Gera um ficheiro `SIMULA_BRIEF_HOJE.md` no teu Desktop
-- Inclui 5 prompts prontos para copiar/colar no Claude e criar posts
+- Inclui 6 prompts prontos para copiar/colar no Claude e criar posts
 
 ---
 
@@ -65,7 +65,8 @@ Deves ver mensagens como:
 === SimulaNewsMachine v2.2 iniciada ===
 Passo 1: Scanning feeds...
 Passo 2: Curating...
-Passo 3: Formatting...
+Passo 3: Planning...
+Passo 4: Formatting...
 === Concluido com sucesso ===
 ```
 

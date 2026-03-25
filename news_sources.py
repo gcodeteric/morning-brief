@@ -7,7 +7,6 @@ Complementam os RSS feeds existentes com priority=3 (RSS usam 5-10).
 import logging
 import os
 import requests
-import praw
 from datetime import datetime, timezone
 from collections import Counter
 
@@ -100,6 +99,11 @@ def fetch_reddit_simracing(limit: int = 20, min_score: int = 50) -> list:
     if not _is_key_valid(REDDIT_CLIENT_ID):
         return []
     try:
+        try:
+            import praw
+        except ImportError:
+            logger.warning("Reddit desactivado: praw não instalado")
+            return []
         reddit = praw.Reddit(
             client_id=REDDIT_CLIENT_ID,
             client_secret=REDDIT_CLIENT_SECRET,

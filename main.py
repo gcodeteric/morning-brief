@@ -154,11 +154,23 @@ def main(dry_run: bool = False):
         try:
             from agents import run_full_pipeline
             top3 = curated["selected"][:3]
+            useful_outputs = 0
             for art in top3:
                 result = run_full_pipeline(art)
                 agent_outputs.append(result)
-                logging.info(f"   ✓ {art.get('title','')[:50]}")
-            logging.info(f"   → {len(agent_outputs)} posts gerados pelo pipeline")
+                is_useful = any([
+                    result.get("post"),
+                    result.get("instagram_pack"),
+                    result.get("image_prompt"),
+                    result.get("voice_script"),
+                ])
+                if is_useful:
+                    useful_outputs += 1
+                    logging.info(f"   ✓ {art.get('title','')[:50]}")
+            if useful_outputs:
+                logging.info(f"   → {useful_outputs} outputs úteis gerados pelo pipeline")
+            else:
+                logging.info("   → Agent pipeline terminou sem outputs úteis")
         except Exception as e:
             logging.warning(f"Agent pipeline falhou (não crítico): {e}")
         finally:

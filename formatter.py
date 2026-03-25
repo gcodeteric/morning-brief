@@ -1,5 +1,5 @@
 """
-SimulaNewsMachine — Formatação do brief diário + 5 prompts para redes sociais.
+SimulaNewsMachine — Formatação do brief diário + 6 prompts para redes sociais.
 
 Gera ficheiro .md completo no Desktop.
 """
@@ -182,7 +182,7 @@ def _enrich_article(article: dict) -> dict:
 
 
 def format_brief(curated, output_path, plan=None, card_paths=None):
-    """Gera o ficheiro .md completo com brief + 5 prompts."""
+    """Gera o ficheiro .md completo com brief + 6 prompts."""
     selected = curated["selected"]
     categories = curated["categories"]
     total_before = curated["total_before_dedup"]

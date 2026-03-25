@@ -173,8 +173,9 @@ def scan_all_feeds():
 
     logger.info(
         f"Scan completo: {stats['ok']} OK, {stats['empty']} vazios, "
-        f"{stats['fail']} falhas, {len(all_articles)} artigos"
+        f"{stats['fail']} falhas"
     )
+    logger.info(f"Scanner: {len(all_articles)} artigos dos feeds")
     # Fontes API gratuitas — complemento com priority=3 (não crítico)
     try:
         from news_sources import fetch_all_api_sources
@@ -183,4 +184,5 @@ def scan_all_feeds():
         logger.info(f"Scanner: +{len(api_articles)} artigos via API (priority=3)")
     except Exception as e:
         logger.warning(f"API sources falhou (não crítico): {e}")
+    logger.info(f"Scanner: total final {len(all_articles)} artigos")
     return all_articles, stats
