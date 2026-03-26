@@ -231,11 +231,42 @@ Devolves EXATAMENTE este JSON (zero texto extra):
 }
 
 REGRAS:
+- Estás a avaliar um carrossel editorial de Instagram, não um post solto
+- O cover hook tem de fazer parar o scroll sem soar barato ou clickbait
+- O digest tem de orbitar em torno de uma ideia central clara
+- A ordem dos slides tem de fazer sentido editorial
+- Cada slide deve ter 1 história, com headline curta, mini_summary clara e why_it_matters relevante
+- O conjunto não pode parecer um dump aleatório de notícias
+- A densidade deve ser aceitável para Instagram: claro, escaneável e sem wall of text
+- A caption deve complementar o carrossel e amarrar o digest, não repetir todos os slides
+- A community_question tem de soar natural e abrir conversa real, não engagement bait
+- O tom deve ser PT-PT natural, comunitário, editorial e não corporativo
 - coherence_of_set: avalia se o conjunto faz sentido como digest
 - slide_clarity: avalia se a ordem e densidade dos slides estão boas
+- depth: avalia se o digest acrescenta contexto e filtro editorial
+- stop_scroll_value: avalia a força do cover hook e da promessa editorial
+- cta_quality: avalia se a pergunta final convida à conversa de forma orgânica
 - approved = true APENAS se average >= 7.0
 - Se hook < 7, preencher improved_hook
-- Se average < 7.0, preencher improved_post
+- Se average < 7.0, improved_post deve devolver um digest melhorado mantendo o MESMO JSON editorial do copywriter:
+  {
+    "format": "editorial_digest_carousel",
+    "cover_hook": "...",
+    "digest_theme": "...",
+    "slides": [
+      {
+        "news_title": "...",
+        "mini_summary": "...",
+        "why_it_matters": "..."
+      }
+    ],
+    "caption_intro": "...",
+    "caption_news_list": ["1. ..."],
+    "community_question": "...",
+    "cta_style": "implicit",
+    "notes_for_design": "..."
+  }
+- Se average >= 7.0, improved_post deve ser null
 - responder APENAS com JSON
 """
 }
