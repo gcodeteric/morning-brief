@@ -242,6 +242,26 @@ def _editorial_card(article):
     return img.convert("RGB")
 
 
+def _digest_cover_article(digest_articles, digest_pack, fallback_category, fallback_label):
+    digest_articles = digest_articles or []
+    digest_pack = digest_pack or {}
+    lead_article = digest_articles[0] if digest_articles else {}
+
+    return {
+        "title": (
+            digest_pack.get("cover_hook")
+            or digest_pack.get("digest_theme")
+            or lead_article.get("title", fallback_label)
+        ),
+        "source": (
+            (digest_pack.get("notes_for_design") or "")[:60]
+            or f"Carrossel editorial — {fallback_label}"
+        ),
+        "category": lead_article.get("category", fallback_category) or fallback_category,
+        "link": lead_article.get("link", ""),
+    }
+
+
 def generate_card(article, index):
     if not PILLOW_AVAILABLE:
         return None
@@ -268,16 +288,44 @@ def generate_instagram_cards(plan):
     if not GENERATE_IMAGES:
         return {}
     results = {}
-    ig_sim  = plan.get("instagram_sim_racing")
-    ig_moto = plan.get("instagram_motorsport")
-    if ig_sim:
-        sim_path = generate_card(ig_sim, 1)
-        if sim_path:
-            results["sim_racing"] = sim_path
-    if ig_moto:
-        moto_path = generate_card(ig_moto, 2)
+    morning_digest = plan.get("instagram_morning_digest", []) or []
+    afternoon_digest = plan.get("instagram_afternoon_digest", []) or []
+    morning_pack = plan.get("instagram_morning_pack", {}) or {}
+    afternoon_pack = plan.get("instagram_afternoon_pack", {}) or {}
+
+    if morning_digest:
+        morning_cover = _digest_cover_article(
+            morning_digest,
+            morning_pack,
+            "sim_racing",
+            "Morning Digest",
+        )
+        morning_path = generate_card(morning_cover, 1)
+        if morning_path:
+            results["morning_digest"] = morning_path
+    else:
+        ig_sim = plan.get("instagram_sim_racing")
+        if ig_sim:
+            sim_path = generate_card(ig_sim, 1)
+            if sim_path:
+                results["sim_racing"] = sim_path
+
+    if afternoon_digest:
+        afternoon_cover = _digest_cover_article(
+            afternoon_digest,
+            afternoon_pack,
+            "motorsport",
+            "Afternoon Digest",
+        )
+        moto_path = generate_card(afternoon_cover, 2)
         if moto_path:
-            results["motorsport"] = moto_path
+            results["afternoon_digest"] = moto_path
+    else:
+        ig_moto = plan.get("instagram_motorsport")
+        if ig_moto:
+            moto_path = generate_card(ig_moto, 2)
+            if moto_path:
+                results["motorsport"] = moto_path
     if results:
         logger.info(f"Cards Instagram em: {CARDS_OUT}")
     return results

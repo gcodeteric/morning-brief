@@ -11,6 +11,14 @@ import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
 
+try:
+    from curator import PORTUGAL_KEYWORDS
+except Exception:
+    PORTUGAL_KEYWORDS = [
+        "portugal", "portuguese", "português", "lisboa", "porto",
+        "algarve", "estoril", "portimao", "portimão",
+    ]
+
 logger = logging.getLogger(__name__)
 
 WEEKLY_CACHE_FILE = Path(__file__).parent / "data" / "weekly_cache.json"
@@ -19,6 +27,9 @@ WEEKLY_CACHE_FILE = Path(__file__).parent / "data" / "weekly_cache.json"
 _DRY_RUN = False
 
 DISCORD_MIN_SCORE = 35
+INSTAGRAM_DIGEST_MAX = 7
+INSTAGRAM_DIGEST_MIN = 4
+INSTAGRAM_MORNING_CATEGORIES = ("sim_racing", "nostalgia", "racing_games")
 
 
 def _normalize_text(text):
@@ -49,6 +60,147 @@ def _top_distinct_articles(articles, limit=3, exclude=None):
     candidates = [a for a in articles if a not in exclude]
     candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
     return candidates[:limit]
+
+
+def _article_key(article):
+    article = article or {}
+    return article.get("link") or article.get("title") or id(article)
+
+
+def _is_portugal_related(article):
+    article = article or {}
+    if article.get("category") == "portugal":
+        return True
+    text = _normalize_text(
+        " ".join([
+            article.get("title", ""),
+            article.get("source", ""),
+            article.get("summary", ""),
+            article.get("category", ""),
+        ])
+    )
+    for keyword in PORTUGAL_KEYWORDS:
+        normalized_keyword = _normalize_text(keyword)
+        if normalized_keyword and normalized_keyword in text:
+            return True
+    return False
+
+
+def _build_morning_digest(selected, category_order):
+    grouped = {group: [] for group in category_order}
+    pool = []
+    pool_keys = set()
+
+    for article in selected:
+        groups = []
+        category = article.get("category")
+        if category in INSTAGRAM_MORNING_CATEGORIES:
+            groups.append(category)
+        if _is_portugal_related(article):
+            groups.append("portugal")
+        if not groups:
+            continue
+
+        article_key = _article_key(article)
+        if article_key not in pool_keys:
+            pool.append(article)
+            pool_keys.add(article_key)
+
+        for group in dict.fromkeys(groups):
+            if group in grouped:
+                grouped[group].append(article)
+
+    for group in grouped.values():
+        group.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+    digest = []
+    used = set()
+    progress = True
+
+    while len(digest) < INSTAGRAM_DIGEST_MAX and progress:
+        progress = False
+        for group_name in category_order:
+            for article in grouped.get(group_name, []):
+                article_key = _article_key(article)
+                if article_key in used:
+                    continue
+                digest.append(article)
+                used.add(article_key)
+                progress = True
+                break
+            if len(digest) >= INSTAGRAM_DIGEST_MAX:
+                break
+
+    if len(digest) < INSTAGRAM_DIGEST_MIN:
+        for article in sorted(pool, key=lambda x: x.get("score", 0), reverse=True):
+            article_key = _article_key(article)
+            if article_key in used:
+                continue
+            digest.append(article)
+            used.add(article_key)
+            if len(digest) >= min(INSTAGRAM_DIGEST_MAX, len(pool)):
+                break
+    else:
+        for article in sorted(pool, key=lambda x: x.get("score", 0), reverse=True):
+            if len(digest) >= INSTAGRAM_DIGEST_MAX:
+                break
+            article_key = _article_key(article)
+            if article_key in used:
+                continue
+            digest.append(article)
+            used.add(article_key)
+
+    return digest[:INSTAGRAM_DIGEST_MAX]
+
+
+def _build_morning_digest_alternatives(selected, primary):
+    variants = []
+    seen = {tuple(_article_key(a) for a in primary)}
+    category_orders = [
+        ["sim_racing", "nostalgia", "racing_games", "portugal"],
+        ["portugal", "sim_racing", "racing_games", "nostalgia"],
+        ["racing_games", "sim_racing", "portugal", "nostalgia"],
+    ]
+
+    for order in category_orders:
+        digest = _build_morning_digest(selected, order)
+        digest_key = tuple(_article_key(a) for a in digest)
+        if digest and digest_key not in seen:
+            variants.append(digest)
+            seen.add(digest_key)
+        if len(variants) >= 2:
+            break
+    return variants
+
+
+def _build_afternoon_digest(selected, offset=0):
+    pool = sorted(
+        [a for a in selected if a.get("category") == "motorsport"],
+        key=lambda x: x.get("score", 0),
+        reverse=True,
+    )
+    if not pool:
+        return []
+    if offset and len(pool) > 1:
+        offset = offset % len(pool)
+        pool = pool[offset:] + pool[:offset]
+    return pool[:INSTAGRAM_DIGEST_MAX]
+
+
+def _build_afternoon_digest_alternatives(selected, primary):
+    pool = [a for a in selected if a.get("category") == "motorsport"]
+    variants = []
+    seen = {tuple(_article_key(a) for a in primary)}
+
+    for offset in (1, 2):
+        digest = _build_afternoon_digest(pool, offset=offset)
+        digest_key = tuple(_article_key(a) for a in digest)
+        if digest and digest_key not in seen:
+            variants.append(digest)
+            seen.add(digest_key)
+        if len(variants) >= 2:
+            break
+    return variants
 
 
 def _reddit_eligible(articles):
@@ -270,6 +422,21 @@ def plan(curated):
     if discord_post is None:
         logger.info("Planner: Discord silêncio hoje — score abaixo do threshold")
 
+    instagram_morning_digest = _build_morning_digest(
+        selected,
+        ["sim_racing", "portugal", "nostalgia", "racing_games"],
+    )
+    instagram_morning_digest_alternatives = _build_morning_digest_alternatives(
+        selected,
+        instagram_morning_digest,
+    )
+
+    instagram_afternoon_digest = _build_afternoon_digest(selected)
+    instagram_afternoon_digest_alternatives = _build_afternoon_digest_alternatives(
+        selected,
+        instagram_afternoon_digest,
+    )
+
     ig_sim_alternatives = _top_by_category(selected, "sim_racing", limit=2, exclude=[ig_sim] if ig_sim else [])
 
     ig_moto_alternatives = _top_by_category(selected, "motorsport", limit=2, exclude=[ig_moto] if ig_moto else [])
@@ -296,6 +463,10 @@ def plan(curated):
     )
 
     result = {
+        "instagram_morning_digest": instagram_morning_digest,
+        "instagram_morning_digest_alternatives": instagram_morning_digest_alternatives,
+        "instagram_afternoon_digest": instagram_afternoon_digest,
+        "instagram_afternoon_digest_alternatives": instagram_afternoon_digest_alternatives,
         "instagram_sim_racing": ig_sim,
         "instagram_sim_racing_alternatives": ig_sim_alternatives,
         "instagram_motorsport": ig_moto,
@@ -315,6 +486,10 @@ def plan(curated):
 
     logger.info(f"Planner: IG sim={ig_sim['title'][:40] if ig_sim else 'None'}")
     logger.info(f"Planner: IG moto={ig_moto['title'][:40] if ig_moto else 'None'}")
+    logger.info(f"Planner: Instagram morning digest size={len(instagram_morning_digest)}")
+    logger.info(f"Planner: Instagram afternoon digest size={len(instagram_afternoon_digest)}")
+    logger.info(f"Planner: Instagram morning digest alternatives={len(instagram_morning_digest_alternatives)}")
+    logger.info(f"Planner: Instagram afternoon digest alternatives={len(instagram_afternoon_digest_alternatives)}")
     logger.info(f"Planner: YT daily={yt_daily['title'][:40] if yt_daily else 'None'}")
     logger.info(f"Planner: IG sim alternatives={len(ig_sim_alternatives)}")
     logger.info(f"Planner: IG moto alternatives={len(ig_moto_alternatives)}")

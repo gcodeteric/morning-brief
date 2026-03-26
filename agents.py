@@ -139,6 +139,104 @@ REGRAS:
 - approved = true APENAS se average >= 7.0
 - Se hook < 7, preencher improved_hook
 - Se average < 7.0, preencher improved_post
+""",
+
+"instagram_digest_analyst": """
+És um analista editorial de Instagram para o Simula Project.
+Recebes um conjunto de 4 a 7 notícias e devolves EXATAMENTE este JSON (zero texto extra):
+{
+  "digest_theme": "frase curta que resume o fio editorial do carrossel",
+  "digest_type": "morning_digest|afternoon_digest",
+  "cover_hook": "headline curta e forte para a capa",
+  "why_this_set_matters": "porque este conjunto importa hoje",
+  "ordering_logic": "explica a ordem ideal dos slides",
+  "community_question": "pergunta forte para comentários",
+  "visual_style": "editorial_clean|breaking_digest|comparison_digest"
+}
+
+REGRAS:
+- morning_digest = ecossistema, comunidade, produto, gaming, nostalgia, PT
+- afternoon_digest = impacto competitivo, motorsport, corrida, calendário, contexto
+- Responder APENAS com JSON
+""",
+
+"instagram_digest_copywriter": """
+És o social media manager do Simula Project.
+Recebes um conjunto de notícias e a análise editorial do digest.
+
+LÍNGUA:
+- PT-PT rigoroso
+
+TOM:
+- orgânico
+- claro
+- editorial
+- nunca corporativo
+
+Devolve EXATAMENTE este JSON (zero texto extra):
+{
+  "format": "editorial_digest_carousel",
+  "cover_hook": "strong cover headline",
+  "digest_theme": "main theme of the carousel",
+  "slides": [
+    {
+      "news_title": "short story headline",
+      "mini_summary": "brief summary",
+      "why_it_matters": "why it matters"
+    }
+  ],
+  "caption_intro": "short caption opening",
+  "caption_news_list": [
+    "1. ...",
+    "2. ...",
+    "3. ..."
+  ],
+  "community_question": "final question",
+  "cta_style": "implicit",
+  "notes_for_design": "short design guidance"
+}
+
+REGRAS:
+- máximo 7 story slides
+- mínimo 4 se houver material suficiente, mas nunca inventar histórias
+- 1 slide = 1 história
+- headline curta e escaneável
+- mini_summary curta
+- why_it_matters curto
+- não transformar isto num wall of text
+- 1 ideia central por carrossel
+- a caption resume o conjunto, não uma história isolada
+- responder APENAS com JSON
+""",
+
+"instagram_digest_qa": """
+És o editor-chefe do Simula Project. Validas carrosséis editoriais antes de publicar.
+Devolves EXATAMENTE este JSON (zero texto extra):
+{
+  "scores": {
+    "hook": 0,
+    "coherence_of_set": 0,
+    "slide_clarity": 0,
+    "depth": 0,
+    "stop_scroll_value": 0,
+    "brand_voice": 0,
+    "cta_quality": 0
+  },
+  "average": 0.0,
+  "approved": true/false,
+  "hashtags": ["15 hashtags mix PT+EN específicas"],
+  "issues": [],
+  "improved_hook": null,
+  "improved_post": null
+}
+
+REGRAS:
+- coherence_of_set: avalia se o conjunto faz sentido como digest
+- slide_clarity: avalia se a ordem e densidade dos slides estão boas
+- approved = true APENAS se average >= 7.0
+- Se hook < 7, preencher improved_hook
+- Se average < 7.0, preencher improved_post
+- responder APENAS com JSON
 """
 }
 
@@ -188,6 +286,74 @@ def _compose_instagram_post(instagram_pack: dict) -> str:
         lines.append("Pergunta à comunidade:")
         lines.append(community_question)
 
+    return "\n".join(lines).strip()
+
+
+def _compose_instagram_digest_post(instagram_pack: dict) -> str:
+    """Converte um digest pack estruturado em texto legível para brief/email."""
+    if not isinstance(instagram_pack, dict) or not instagram_pack:
+        return ""
+
+    lines = []
+    cover_hook = instagram_pack.get("cover_hook")
+    digest_theme = instagram_pack.get("digest_theme")
+    slides = instagram_pack.get("slides", [])
+    caption_intro = instagram_pack.get("caption_intro")
+    caption_news_list = instagram_pack.get("caption_news_list", [])
+    community_question = instagram_pack.get("community_question")
+
+    if cover_hook:
+        lines.append(f"Cover Hook: {cover_hook}")
+    if digest_theme:
+        lines.append(f"Tema: {digest_theme}")
+    if isinstance(slides, list) and slides:
+        lines.append("Slides:")
+        for i, slide in enumerate(slides[:7], 1):
+            if not isinstance(slide, dict):
+                continue
+            news_title = slide.get("news_title", "")
+            mini_summary = slide.get("mini_summary", "")
+            why_it_matters = slide.get("why_it_matters", "")
+            lines.append(f"{i}. {news_title}")
+            if mini_summary:
+                lines.append(f"   Resumo: {mini_summary}")
+            if why_it_matters:
+                lines.append(f"   Porque importa: {why_it_matters}")
+    if caption_intro:
+        if lines:
+            lines.append("")
+        lines.append("Caption Intro:")
+        lines.append(caption_intro)
+    if isinstance(caption_news_list, list) and caption_news_list:
+        lines.append("")
+        lines.append("Caption News List:")
+        for item in caption_news_list[:7]:
+            if item:
+                lines.append(str(item))
+    if community_question:
+        lines.append("")
+        lines.append("Pergunta à comunidade:")
+        lines.append(community_question)
+
+    return "\n".join(lines).strip()
+
+
+def _build_digest_summary(digest_articles, digest_type):
+    lines = [
+        f"Digest type: {digest_type}",
+        f"Stories: {len(digest_articles)}",
+        "",
+    ]
+    for i, article in enumerate(digest_articles[:7], 1):
+        lines.append(
+            f"{i}. [{article.get('category', 'unknown')}] "
+            f"{article.get('title', '')} — {article.get('source', '')}"
+        )
+        summary = (article.get("summary") or "")[:260]
+        if summary:
+            lines.append(f"   Resumo: {summary}")
+        lines.append(f"   Score: {article.get('score', 0)}")
+        lines.append(f"   Link: {article.get('link', '')}")
     return "\n".join(lines).strip()
 
 
@@ -260,6 +426,66 @@ def run_full_pipeline(article: dict) -> dict:
 
     return {
         "article": article,
+        "analysis": analysis,
+        "post": final_post,
+        "instagram_pack": instagram_pack,
+        "image_prompt": img_prompt,
+        "voice_script": voice,
+        "qa": qa_result,
+        "raw_post": raw_post,
+    }
+
+
+def run_instagram_digest_pipeline(digest_articles: list, digest_type: str) -> dict:
+    """Corre pipeline dedicado para digest editorial de Instagram."""
+    digest_articles = digest_articles or []
+    if not digest_articles:
+        return {
+            "digest_type": digest_type,
+            "articles": [],
+            "analysis": "",
+            "post": "",
+            "instagram_pack": {},
+            "image_prompt": "",
+            "voice_script": "",
+            "qa": "",
+            "raw_post": "",
+        }
+
+    summary = _build_digest_summary(digest_articles, digest_type)
+    logger.info(f"Instagram digest pipeline: {digest_type} ({len(digest_articles)} stories)")
+
+    analysis = run_agent("instagram_digest_analyst", summary)
+    raw_post = run_agent("instagram_digest_copywriter", summary, analysis)
+
+    instagram_pack = {}
+    post = raw_post
+    try:
+        parsed_pack = json.loads(raw_post)
+        if isinstance(parsed_pack, dict):
+            instagram_pack = parsed_pack
+            composed_post = _compose_instagram_digest_post(instagram_pack)
+            if composed_post:
+                post = composed_post
+    except Exception:
+        pass
+
+    img_prompt = run_agent("image_director", post, analysis)
+    voice = run_agent("voice_director", post)
+    qa_result = run_agent("instagram_digest_qa", post)
+
+    final_post = post
+    try:
+        qa_data = json.loads(qa_result)
+        if not qa_data.get("approved") and qa_data.get("improved_post"):
+            final_post = qa_data["improved_post"]
+            logger.info("Instagram digest QA rejeitou → usando improved_post")
+    except Exception:
+        pass
+
+    return {
+        "digest_type": digest_type,
+        "articles": digest_articles,
         "analysis": analysis,
         "post": final_post,
         "instagram_pack": instagram_pack,

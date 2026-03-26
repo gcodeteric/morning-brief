@@ -143,6 +143,40 @@ def _format_channel_options(channel_name, primary, alternatives):
     return "\n".join(lines)
 
 
+def _format_digest_options(channel_name, primary_digest, alternative_digests):
+    primary_digest = primary_digest or []
+    alternative_digests = alternative_digests or []
+
+    def _format_digest(label, digest_articles):
+        lines = [f"{label}:"]
+        if not digest_articles:
+            lines.append("Sem digest disponível.")
+            lines.append("")
+            return lines
+
+        lines.append(f"- Histórias: {len(digest_articles)}")
+        for i, article in enumerate(digest_articles[:7], 1):
+            lines.append(
+                f"{i}. {article.get('title', 'Sem título')} — "
+                f"{article.get('source', 'Fonte desconhecida')} "
+                f"({article.get('category', 'unknown')}) | Score {article.get('score', 0)}"
+            )
+        lines.append("")
+        return lines
+
+    lines = [f"## {channel_name}", ""]
+    lines.extend(_format_digest("Principal", primary_digest))
+
+    if alternative_digests:
+        for i, digest_articles in enumerate(alternative_digests[:2], 1):
+            lines.extend(_format_digest(f"Alternativa {i}", digest_articles))
+    else:
+        lines.append("Sem alternativa disponível.")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def _enrich_article(article: dict) -> dict:
     """Expande o artigo com campos calculados para prompts mais ricos."""
     summary = article.get("summary") or ""
@@ -181,6 +215,51 @@ def _enrich_article(article: dict) -> dict:
     }
 
 
+def _fallback_instagram_morning_digest(selected):
+    digest = [
+        article for article in selected
+        if article.get("category") in ("sim_racing", "nostalgia", "racing_games", "portugal")
+    ]
+    return digest[:7] if digest else selected[:5]
+
+
+def _fallback_instagram_afternoon_digest(selected):
+    digest = [article for article in selected if article.get("category") == "motorsport"]
+    return digest[:7]
+
+
+def _format_digest_pack_for_brief(pack):
+    pack = pack or {}
+    slides = pack.get("slides", []) if isinstance(pack, dict) else []
+    lines = [
+        f"Tema do digest: {pack.get('digest_theme', 'N/A')}",
+        f"Cover hook: {pack.get('cover_hook', 'N/A')}",
+        "Slides propostos:",
+    ]
+    if isinstance(slides, list) and slides:
+        for i, slide in enumerate(slides[:7], 1):
+            if isinstance(slide, dict):
+                lines.append(
+                    f"{i}. {slide.get('news_title', 'N/A')} | "
+                    f"Resumo: {slide.get('mini_summary', '')} | "
+                    f"Porque importa: {slide.get('why_it_matters', '')}"
+                )
+            else:
+                lines.append(f"{i}. {slide}")
+    else:
+        lines.append("Sem slides estruturados disponíveis.")
+
+    lines.append(f"Caption intro: {pack.get('caption_intro', 'N/A')}")
+    caption_news_list = pack.get("caption_news_list", [])
+    if isinstance(caption_news_list, list) and caption_news_list:
+        lines.append("Caption news list:")
+        for item in caption_news_list[:7]:
+            lines.append(str(item))
+    lines.append(f"Pergunta à comunidade: {pack.get('community_question', 'N/A')}")
+    lines.append(f"Notas para design: {pack.get('notes_for_design', 'N/A')}")
+    return "\n".join(lines)
+
+
 def format_brief(curated, output_path, plan=None, card_paths=None):
     """Gera o ficheiro .md completo com brief + 6 prompts."""
     selected = curated["selected"]
@@ -195,9 +274,15 @@ def format_brief(curated, output_path, plan=None, card_paths=None):
 
     news_block = _generate_news_block(selected)
     if plan is None:
+        instagram_morning_digest = _fallback_instagram_morning_digest(selected)
+        instagram_afternoon_digest = _fallback_instagram_afternoon_digest(selected)
         # Fallback genérico de compatibilidade: mantém o brief funcional
         # mesmo sem planner. Não representa seleção editorial real por canal.
         plan = {
+            "instagram_morning_digest": instagram_morning_digest,
+            "instagram_morning_digest_alternatives": [],
+            "instagram_afternoon_digest": instagram_afternoon_digest,
+            "instagram_afternoon_digest_alternatives": [],
             "instagram_sim_racing": selected[0] if selected else None,
             "instagram_motorsport": selected[1] if len(selected) > 1 else None,
             "x_thread_1": selected[0] if selected else None,
@@ -256,15 +341,15 @@ def format_brief(curated, output_path, plan=None, card_paths=None):
     md.append("")
     md.append("# 🎛️ ESCOLHAS DO PLANNER E ALTERNATIVAS")
     md.append("")
-    md.append(_format_channel_options(
-        "Instagram — Sim Racing",
-        plan.get("instagram_sim_racing"),
-        plan.get("instagram_sim_racing_alternatives", []),
+    md.append(_format_digest_options(
+        "Instagram — Morning Digest",
+        plan.get("instagram_morning_digest", []),
+        plan.get("instagram_morning_digest_alternatives", []),
     ))
-    md.append(_format_channel_options(
-        "Instagram — Motorsport",
-        plan.get("instagram_motorsport"),
-        plan.get("instagram_motorsport_alternatives", []),
+    md.append(_format_digest_options(
+        "Instagram — Afternoon Digest",
+        plan.get("instagram_afternoon_digest", []),
+        plan.get("instagram_afternoon_digest_alternatives", []),
     ))
     md.append(_format_channel_options(
         "X/Twitter — Thread 1",
@@ -293,15 +378,23 @@ def format_brief(curated, output_path, plan=None, card_paths=None):
             md.append(f"- {channel} → alternativa {alt_idx}")
         md.append("")
 
-    md.append("## Recomendação editorial Instagram")
-    md.append("- Ritmo recomendado nesta fase: 1 post a cada 2 dias")
-    md.append("- Prioridade: qualidade > frequência")
-    md.append("- Só subir para diário quando houver consistência editorial e visual durante várias semanas")
+    md.append("## Instagram editorial recommendation")
+    md.append("- Current structure: 2 carousels per day")
+    md.append("- Morning: sim racing / nostalgia / racing games / PT")
+    md.append("- Afternoon: motorsport")
+    md.append("- Ideal size: 5 to 7 stories per carousel")
+    md.append("- Priority: clarity and retention, not maximum volume")
     md.append("")
 
     # ====================================================================
     # SECÇÃO 2: PROMPTS EDITORIAIS v3
     # ====================================================================
+    ig_morning_digest = plan.get("instagram_morning_digest", []) or []
+    ig_afternoon_digest = plan.get("instagram_afternoon_digest", []) or []
+    ig_morning_output = plan.get("instagram_morning_output", {}) or {}
+    ig_afternoon_output = plan.get("instagram_afternoon_output", {}) or {}
+    ig_morning_pack = ig_morning_output.get("instagram_pack") or plan.get("instagram_morning_pack", {}) or {}
+    ig_afternoon_pack = ig_afternoon_output.get("instagram_pack") or plan.get("instagram_afternoon_pack", {}) or {}
     ig_sim      = plan.get("instagram_sim_racing")
     ig_moto     = plan.get("instagram_motorsport")
     x1          = plan.get("x_thread_1")
@@ -310,21 +403,40 @@ def format_brief(curated, output_path, plan=None, card_paths=None):
     reddit_arts = plan.get("reddit_candidates", [])
     discord_art = plan.get("discord_post")
     is_sunday   = plan.get("is_sunday", False)
-    ig_sim_e    = _enrich_article(ig_sim)      if ig_sim      else {}
-    ig_moto_e   = _enrich_article(ig_moto)     if ig_moto     else {}
     x1_e        = _enrich_article(x1)          if x1          else {}
     x2_e        = _enrich_article(x2)          if x2          else {}
     yt_e        = _enrich_article(yt)          if yt          else {}
     discord_e   = _enrich_article(discord_art) if discord_art else {}
 
-    card_sim_path  = card_paths.get("sim_racing",  "Desktop/SIMULA_CARDS_HOJE/card_01_sim_racing.png")
-    card_moto_path = card_paths.get("motorsport",  "Desktop/SIMULA_CARDS_HOJE/card_02_motorsport.png")
+    card_morning_path = (
+        card_paths.get("morning_digest")
+        or card_paths.get("sim_racing")
+        or "Desktop/SIMULA_CARDS_HOJE/card_01_morning_digest.png"
+    )
+    card_afternoon_path = (
+        card_paths.get("afternoon_digest")
+        or card_paths.get("motorsport")
+        or "Desktop/SIMULA_CARDS_HOJE/card_02_afternoon_digest.png"
+    )
 
     day_context = DAY_CONTEXT.get(now.weekday(), "")
-    ig_manha = "Carrossel" if now.weekday() % 2 == 0 else "Reel"
-    ig_tarde = "Reel"      if now.weekday() % 2 == 0 else "Carrossel"
-
+    morning_digest_block = _generate_news_block(ig_morning_digest) if ig_morning_digest else "Sem stories suficientes no digest da manhã."
+    afternoon_digest_block = _generate_news_block(ig_afternoon_digest) if ig_afternoon_digest else "Sem stories suficientes no digest da tarde."
     reddit_block = _generate_news_block(reddit_arts) if reddit_arts else "Sem artigos elegíveis hoje."
+
+    if ig_morning_pack or ig_afternoon_pack:
+        md.append("---")
+        md.append("")
+        md.append("## Instagram digest packs gerados")
+        md.append("")
+        if ig_morning_pack:
+            md.append("### Morning Digest")
+            md.append(_format_digest_pack_for_brief(ig_morning_pack))
+            md.append("")
+        if ig_afternoon_pack:
+            md.append("### Afternoon Digest")
+            md.append(_format_digest_pack_for_brief(ig_afternoon_pack))
+            md.append("")
 
     md.append("---")
     md.append("")
@@ -336,7 +448,7 @@ def format_brief(curated, output_path, plan=None, card_paths=None):
     # ── PROMPT 1: INSTAGRAM ──────────────────────────────────────────────
     md.append("---")
     md.append("")
-    md.append("## PROMPT 1 — INSTAGRAM (2 posts com imagem)")
+    md.append("## PROMPT 1 — INSTAGRAM (2 carrosséis editoriais com imagem)")
     md.append("")
     md.append("````")
     md.append(f"""És o social media manager do Simula Project — o primeiro operador integrado de sim racing em Portugal.
@@ -346,40 +458,42 @@ CONTEXTO DA MARCA:
 - Simula Project: hub de sim racing, motorsport, hardware, racing games e simuladores nostálgicos
 - Idioma: PT-PT (português de Portugal)
 - Imagens branded já geradas em:
-  POST 1: {card_sim_path}
-  POST 2: {card_moto_path}
+  CARROSSEL MANHÃ: {card_morning_path}
+  CARROSSEL TARDE: {card_afternoon_path}
 
-POST 1 — SIM RACING (publicar 09:00):
-Tipo: {ig_sim_e.get('content_type', 'N/A')}
-Notícia: {ig_sim_e.get('title', 'N/A')}
-Fonte: {ig_sim_e.get('source', 'N/A')}
-Contexto completo: {ig_sim_e.get('full_summary', 'N/A')}
-Link: {ig_sim_e.get('link', '')}
-Score: {ig_sim_e.get('score', 0)}/100
+CARROSSEL DA MANHÃ — ECOSSISTEMA / COMMUNITY DIGEST (publicar 09:00):
+Stories selecionadas:
+{morning_digest_block}
 {f"CONTEXTO DO DIA: {day_context}" if day_context else ""}
 
-POST 2 — MOTORSPORT (publicar 18:00):
-Tipo: {ig_moto_e.get('content_type', 'N/A')}
-Notícia: {ig_moto_e.get('title', 'N/A')}
-Fonte: {ig_moto_e.get('source', 'N/A')}
-Contexto completo: {ig_moto_e.get('full_summary', 'N/A')}
-Link: {ig_moto_e.get('link', '')}
-Score: {ig_moto_e.get('score', 0)}/100
+PACK ESTRUTURADO JÁ GERADO PELO PIPELINE (usar como base se fizer sentido):
+{_format_digest_pack_for_brief(ig_morning_pack)}
+
+CARROSSEL DA TARDE — MOTORSPORT DIGEST (publicar 18:00):
+Stories selecionadas:
+{afternoon_digest_block}
 {f"CONTEXTO DO DIA: {day_context}" if day_context else ""}
 
-TAREFA — Para CADA post gera:
-0. Para cada post, estrutura primeiro a lógica editorial antes de escrever a caption
-1. Caption completa (hook forte primeira linha, máx 2200 chars)
-2. POST 1 — formato {ig_manha}: {"5-7 slides, texto por slide, CTA no último" if ig_manha == "Carrossel" else "conceito visual, texto overlay 3-5 secções, ~30s"}
-   POST 2 — formato {ig_tarde}: {"conceito visual, texto overlay 3-5 secções, ~30s" if ig_tarde == "Reel" else "5-7 slides, texto por slide, CTA no último"}
-3. 15-20 hashtags por post (mix PT + EN, específicas do tema)
+PACK ESTRUTURADO JÁ GERADO PELO PIPELINE (usar como base se fizer sentido):
+{_format_digest_pack_for_brief(ig_afternoon_pack)}
+
+TAREFA — Para CADA carrossel gera:
+0. Estrutura primeiro a lógica editorial do digest antes de escrever a caption
+1. Cover hook forte
+2. Carrossel editorial com 5 a 7 stories, uma story por slide
+3. Para cada slide: headline curta + mini-summary + porque importa
+4. Caption que resume o conjunto, não uma história isolada
+5. Pergunta final à comunidade
+6. 15-20 hashtags por carrossel (mix PT + EN, específicas do tema)
 
 REGRAS:
 - O formato por defeito deve ser carrossel editorial.
-- Só usar Reel se a notícia tiver força visual clara e funcionar bem em formato rápido.
-- Cada post deve centrar-se numa ideia principal, não num resumo genérico da notícia.
-- Estrutura editorial recomendada: Hook -> O que aconteceu -> Porque importa -> O detalhe que quase ninguém viu -> Pergunta final
-- Cada post tem valor standalone
+- Cada carrossel deve ter uma ideia central, não um amontoado aleatório de headlines.
+- Cada slide contém uma história.
+- A caption resume o conjunto e amarra o fio editorial.
+- Não gerar 10 stories por carrossel por defeito; preferir 5 a 7.
+- Morning carousel: sim racing / nostalgia / racing games / PT.
+- Afternoon carousel: motorsport.
 - Emojis com moderação
 - Nunca preços, nunca venda directa
 {NOTAS_LEGAIS_SOCIAL}

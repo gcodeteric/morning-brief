@@ -194,6 +194,38 @@ def main(dry_run: bool = False):
         except Exception as e:
             logging.warning(f"Manual overrides falharam (não crítico): {e}")
 
+        # ── Passo 3.5: Instagram digest pipeline (não crítico) ───────────
+        if editorial_plan:
+            logging.info("Passo 3.5: Instagram digest pipeline...")
+            try:
+                from agents import run_instagram_digest_pipeline
+
+                digest_jobs = [
+                    ("instagram_morning", "instagram_morning_digest", "morning_digest"),
+                    ("instagram_afternoon", "instagram_afternoon_digest", "afternoon_digest"),
+                ]
+                useful_digest_outputs = 0
+
+                for prefix, digest_key, digest_type in digest_jobs:
+                    digest_articles = editorial_plan.get(digest_key, []) or []
+                    result = run_instagram_digest_pipeline(digest_articles, digest_type)
+                    editorial_plan[f"{prefix}_output"] = result
+                    editorial_plan[f"{prefix}_pack"] = result.get("instagram_pack", {})
+                    if any([
+                        result.get("post"),
+                        result.get("instagram_pack"),
+                        result.get("image_prompt"),
+                        result.get("voice_script"),
+                    ]):
+                        useful_digest_outputs += 1
+
+                if useful_digest_outputs:
+                    logging.info(f"   → {useful_digest_outputs} digest packs úteis gerados")
+                else:
+                    logging.info("   → Instagram digest pipeline terminou sem outputs úteis")
+            except Exception as e:
+                logging.warning(f"Instagram digest pipeline falhou (não crítico): {e}")
+
         # Cards (import lazy — depende de Pillow/assets opcionais)
         card_paths = {}
         if GENERATE_IMAGES and not dry_run:

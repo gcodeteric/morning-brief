@@ -9,6 +9,7 @@ Sistema automático que todas as manhãs te entrega um ficheiro no Desktop com a
 - Filtra, pontua e seleciona as 15 notícias mais relevantes
 - Gera um ficheiro `SIMULA_BRIEF_HOJE.md` no teu Desktop
 - Inclui 6 prompts prontos para copiar/colar no Claude e criar posts
+- Instagram funciona como 2 carrosséis editoriais por dia: manhã (sim racing / nostalgia / racing games / PT) e tarde (motorsport)
 
 ---
 
@@ -163,12 +164,19 @@ Exemplo:
 
 ```json
 {
-  "instagram_sim_racing": 1,
+  "instagram_morning_digest": 0,
+  "instagram_afternoon_digest": 1,
   "youtube_daily": 2
 }
 ```
 
 Se o ficheiro não existir, o sistema usa automaticamente as escolhas principais do planner.
+
+Instagram:
+- `instagram_morning_digest` controla o carrossel editorial da manhã
+- `instagram_afternoon_digest` controla o carrossel editorial da tarde
+- cada digest usa `0` principal, `1` alternativa 1, `2` alternativa 2
+- estrutura atual: 5 a 7 histórias por carrossel
 
 Também existe o ficheiro:
 

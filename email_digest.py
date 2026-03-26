@@ -63,6 +63,20 @@ def _article_line(article: dict) -> str:
     return f"{title} | {source} | Score: {score} | {link}"
 
 
+def _digest_story_line(index: int, article: dict, slide: dict | None = None) -> str:
+    article = article or {}
+    slide = slide or {}
+    news_title = slide.get("news_title") or article.get("title") or "Sem título"
+    mini_summary = slide.get("mini_summary") or (article.get("summary") or "")[:120]
+    why_it_matters = slide.get("why_it_matters") or ""
+    parts = [f"{index}. {news_title}"]
+    if mini_summary:
+        parts.append(f"Resumo: {mini_summary}")
+    if why_it_matters:
+        parts.append(f"Porque importa: {why_it_matters}")
+    return " | ".join(parts)
+
+
 def build_email_digest(curated, plan, output_path, card_paths=None) -> dict:
     curated = curated or {}
     plan = plan or {}
@@ -104,6 +118,107 @@ def build_email_digest(curated, plan, output_path, card_paths=None) -> dict:
             }
         except Exception:
             return {"hashtags": [], "issues": [], "average": "N/A", "approved": False}
+
+    def _text_instagram_digest_block(label, digest_articles, digest_output):
+        digest_articles = digest_articles or []
+        digest_output = digest_output or {}
+        pack = digest_output.get("instagram_pack", {}) if isinstance(digest_output, dict) else {}
+        qa = _parse_qa(digest_output)
+        slides = pack.get("slides", []) if isinstance(pack, dict) else []
+
+        lines = [label]
+        if not digest_articles:
+            lines.append("Sem digest selecionado.")
+            return "\n".join(lines)
+
+        lines.append(f"Tema: {pack.get('digest_theme', 'N/A')}")
+        lines.append(f"Cover Hook: {pack.get('cover_hook', 'N/A')}")
+        for i, article in enumerate(digest_articles[:7], 1):
+            slide = slides[i - 1] if i - 1 < len(slides) and isinstance(slides[i - 1], dict) else {}
+            lines.append(_digest_story_line(i, article, slide))
+        if pack.get("community_question"):
+            lines.append("")
+            lines.append(f"Pergunta final: {pack.get('community_question')}")
+        if digest_output.get("post"):
+            lines.append("")
+            lines.append("Post final:")
+            lines.append(digest_output.get("post", ""))
+        if qa.get("hashtags"):
+            lines.append("")
+            lines.append("Hashtags:")
+            lines.append(" ".join(qa["hashtags"]))
+        if digest_output.get("image_prompt"):
+            lines.append("")
+            lines.append("Prompt de imagem:")
+            lines.append(digest_output.get("image_prompt", ""))
+        if digest_output.get("voice_script"):
+            lines.append("")
+            lines.append("Script de voz:")
+            lines.append(digest_output.get("voice_script", ""))
+        return "\n".join(lines)
+
+    def _html_instagram_digest_block(label, digest_articles, digest_output):
+        digest_articles = digest_articles or []
+        digest_output = digest_output or {}
+        pack = digest_output.get("instagram_pack", {}) if isinstance(digest_output, dict) else {}
+        qa = _parse_qa(digest_output)
+        slides = pack.get("slides", []) if isinstance(pack, dict) else []
+
+        if not digest_articles:
+            return (
+                f'<div style="padding:12px 0;border-bottom:1px solid #ddd;">'
+                f'<h2 style="font-size:18px;margin:0 0 8px 0;">{html.escape(label)}</h2>'
+                f'<p style="margin:0;color:#444;">Sem digest selecionado.</p>'
+                f"</div>"
+            )
+
+        parts = [
+            '<div style="padding:12px 0;border-bottom:1px solid #ddd;">',
+            f'<h2 style="font-size:18px;margin:0 0 8px 0;">{html.escape(label)}</h2>',
+            f'<p style="margin:0 0 6px 0;"><strong>Tema:</strong> '
+            f'{html.escape(pack.get("digest_theme", "N/A"))}</p>',
+            f'<p style="margin:0 0 10px 0;"><strong>Cover Hook:</strong> '
+            f'{html.escape(pack.get("cover_hook", "N/A"))}</p>',
+        ]
+
+        for i, article in enumerate(digest_articles[:7], 1):
+            slide = slides[i - 1] if i - 1 < len(slides) and isinstance(slides[i - 1], dict) else {}
+            parts.append(
+                f'<p style="margin:0 0 8px 0;color:#444;">'
+                f'{html.escape(_digest_story_line(i, article, slide))}</p>'
+            )
+
+        if pack.get("community_question"):
+            parts.append(
+                f'<p style="margin:8px 0 6px 0;"><strong>Pergunta final:</strong> '
+                f'{html.escape(pack.get("community_question", ""))}</p>'
+            )
+        if digest_output.get("post"):
+            parts.append('<p style="margin:8px 0 4px 0;"><strong>Post final</strong></p>')
+            parts.append(
+                f'<p style="margin:0 0 8px 0;white-space:pre-wrap;">'
+                f'{html.escape(digest_output.get("post", ""))}</p>'
+            )
+        if qa.get("hashtags"):
+            parts.append('<p style="margin:8px 0 4px 0;"><strong>Hashtags</strong></p>')
+            parts.append(
+                f'<p style="margin:0 0 8px 0;color:#444;">'
+                f'{html.escape(" ".join(qa["hashtags"]))}</p>'
+            )
+        if digest_output.get("image_prompt"):
+            parts.append('<p style="margin:8px 0 4px 0;"><strong>Prompt de imagem</strong></p>')
+            parts.append(
+                f'<p style="margin:0 0 8px 0;white-space:pre-wrap;color:#444;">'
+                f'{html.escape(digest_output.get("image_prompt", ""))}</p>'
+            )
+        if digest_output.get("voice_script"):
+            parts.append('<p style="margin:8px 0 4px 0;"><strong>Script de voz</strong></p>')
+            parts.append(
+                f'<p style="margin:0;white-space:pre-wrap;color:#444;">'
+                f'{html.escape(digest_output.get("voice_script", ""))}</p>'
+            )
+        parts.append("</div>")
+        return "".join(parts)
 
     def _text_channel_block(label, article):
         lines = [label]
@@ -190,14 +305,24 @@ def build_email_digest(curated, plan, output_path, card_paths=None) -> dict:
         parts.append("</div>")
         return "".join(parts)
 
+    morning_digest = plan.get("instagram_morning_digest", []) or []
+    afternoon_digest = plan.get("instagram_afternoon_digest", []) or []
+    morning_output = plan.get("instagram_morning_output", {}) or {}
+    afternoon_output = plan.get("instagram_afternoon_output", {}) or {}
+    has_instagram_digests = bool(morning_digest or afternoon_digest)
+
     channels = [
-        ("Instagram — Sim Racing", plan.get("instagram_sim_racing")),
-        ("Instagram — Motorsport", plan.get("instagram_motorsport")),
         ("X/Twitter — Thread 1", plan.get("x_thread_1")),
         ("X/Twitter — Thread 2", plan.get("x_thread_2")),
         ("YouTube — Daily", plan.get("youtube_daily")),
         ("Discord", plan.get("discord_post")),
     ]
+    if not has_instagram_digests:
+        channels = [
+            ("Instagram — Sim Racing", plan.get("instagram_sim_racing")),
+            ("Instagram — Motorsport", plan.get("instagram_motorsport")),
+            *channels,
+        ]
     reddit_candidates = plan.get("reddit_candidates", []) or []
     overrides = plan.get("override_summary") or {}
 
@@ -225,6 +350,20 @@ def build_email_digest(curated, plan, output_path, card_paths=None) -> dict:
             text_parts.append(f"- {channel}: alternativa {choice}")
     else:
         text_parts.append("Overrides aplicados: nenhum")
+
+    if has_instagram_digests:
+        text_parts.append("")
+        text_parts.append(_text_instagram_digest_block(
+            "Instagram — Morning Digest",
+            morning_digest,
+            morning_output,
+        ))
+        text_parts.append("")
+        text_parts.append(_text_instagram_digest_block(
+            "Instagram — Afternoon Digest",
+            afternoon_digest,
+            afternoon_output,
+        ))
 
     for label, article in channels:
         text_parts.append("")
@@ -277,6 +416,18 @@ def build_email_digest(curated, plan, output_path, card_paths=None) -> dict:
         html_parts.append(
             '<p style="margin:0 0 16px 0;color:#444;">Overrides aplicados: nenhum</p>'
         )
+
+    if has_instagram_digests:
+        html_parts.append(_html_instagram_digest_block(
+            "Instagram — Morning Digest",
+            morning_digest,
+            morning_output,
+        ))
+        html_parts.append(_html_instagram_digest_block(
+            "Instagram — Afternoon Digest",
+            afternoon_digest,
+            afternoon_output,
+        ))
 
     for label, article in channels:
         html_parts.append(_html_channel_block(label, article))

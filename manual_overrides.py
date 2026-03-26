@@ -41,6 +41,8 @@ def apply_manual_overrides(plan, overrides) -> dict:
     updated = dict(plan or {})
     applied = {}
     channel_keys = [
+        "instagram_morning_digest",
+        "instagram_afternoon_digest",
         "instagram_sim_racing",
         "instagram_motorsport",
         "x_thread_1",
