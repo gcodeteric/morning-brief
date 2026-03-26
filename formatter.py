@@ -743,14 +743,25 @@ REGRAS:
 
     # --- AGENT OUTPUTS (MiniMax M2.7) ---
     agent_outputs = curated.get("agent_outputs", [])
-    if agent_outputs:
+    useful_agent_outputs = []
+    for output in agent_outputs:
+        output = output or {}
+        if any([
+            output.get("post"),
+            output.get("image_prompt"),
+            output.get("voice_script"),
+            isinstance(output.get("instagram_pack"), dict) and bool(output.get("instagram_pack")),
+        ]):
+            useful_agent_outputs.append(output)
+
+    if useful_agent_outputs:
         md.append("---")
         md.append("")
         md.append("# 🤖 POSTS GERADOS — PIPELINE MINIMAX M2.7")
         md.append("")
         md.append("*Score mínimo aprovação: 7.0/10*")
         md.append("")
-        for i, output in enumerate(agent_outputs, 1):
+        for i, output in enumerate(useful_agent_outputs, 1):
             article  = output.get("article", {})
             post     = output.get("post", "")
             qa_raw   = output.get("qa", "")
@@ -770,11 +781,6 @@ REGRAS:
                 issues      = qa_data.get("issues", [])
             except Exception:
                 issues = []
-
-            # Não mostrar bloco vazio se agente falhou
-            if not post and not img and not voice:
-                continue
-
             status = "✅ APROVADO" if qa_approved else "⚠️ REVISTO PELO QA"
             qa_display = f"{qa_score}/10" if qa_score != "N/A" else "não disponível"
 

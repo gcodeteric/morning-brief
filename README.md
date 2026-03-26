@@ -5,7 +5,7 @@
 Sistema automático que todas as manhãs te entrega um ficheiro no Desktop com as 15 notícias mais importantes de sim racing, motorsport, hardware, racing games e simuladores, prontas a transformar em posts para redes sociais.
 
 **O que faz:**
-- Inclui 57 feeds RSS prontos a usar + suporte para ~22 canais YouTube adicionais (correr channel_id_extractor.py para activar)
+- Inclui 50 feeds RSS estáticos prontos a usar + suporte para ~22 canais YouTube adicionais (correr channel_id_extractor.py para activar)
 - Filtra, pontua e seleciona as 15 notícias mais relevantes
 - Gera um ficheiro `SIMULA_BRIEF_HOJE.md` no teu Desktop
 - Gera 6 blocos operacionais para redes sociais no brief final
@@ -222,8 +222,8 @@ Exemplo:
 ```json
 {
   "instagram_morning_digest": 0,
-  "instagram_afternoon_digest": 1,
-  "youtube_daily": 2
+  "instagram_afternoon_digest": 0,
+  "youtube_daily": 0
 }
 ```
 
@@ -348,8 +348,10 @@ Existem testes executáveis para módulos críticos em:
 `tests/`
 
 Cobertura actual:
+- `main.py`
 - `planner.py`
 - `manual_overrides.py`
+- `dashboard_overrides.py`
 - `agents.py`
 - `formatter.py`
 - `dashboard_data.py`

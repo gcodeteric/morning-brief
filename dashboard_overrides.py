@@ -23,6 +23,11 @@ SUPPORTED_OVERRIDE_FIELDS = [
 ]
 
 
+def _neutralize_override_defaults(data: dict | None) -> dict:
+    sanitized = sanitize_overrides(data or {})
+    return {key: 0 for key in sanitized}
+
+
 def ensure_overrides_file() -> Path:
     if OVERRIDES_FILE.exists():
         return OVERRIDES_FILE
@@ -31,7 +36,7 @@ def ensure_overrides_file() -> Path:
         if OVERRIDES_EXAMPLE_FILE.exists():
             example_data = json.loads(OVERRIDES_EXAMPLE_FILE.read_text(encoding="utf-8"))
             OVERRIDES_FILE.write_text(
-                json.dumps(example_data, indent=2, ensure_ascii=False),
+                json.dumps(_neutralize_override_defaults(example_data), indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
         else:

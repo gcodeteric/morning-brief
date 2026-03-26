@@ -862,7 +862,25 @@ def build_selection_summary(context: dict, draft_overrides: dict | None = None) 
     snapshot = context.get("snapshot", {}) or {}
     run_summary = context.get("run_summary", {}) or {}
     plan = (snapshot.get("plan", {}) or {})
-    draft_overrides = draft_overrides or {}
+    active_overrides = dict((context.get("overrides", {}) or {}))
+    if draft_overrides:
+        active_overrides.update(draft_overrides)
+
+    def _resolve_digest(channel: str):
+        override_value = _coerce_int(active_overrides.get(channel), 0)
+        alternatives = plan.get(f"{channel}_alternatives", []) or []
+        if override_value == 1:
+            if len(alternatives) > 0:
+                return normalize_digest(alternatives[0]), 1
+            return normalize_digest(plan.get(channel, [])), 0
+        if override_value == 2:
+            if len(alternatives) > 1:
+                return normalize_digest(alternatives[1]), 2
+            return normalize_digest(plan.get(channel, [])), 0
+        return normalize_digest(plan.get(channel, [])), 0
+
+    morning_digest, morning_variant = _resolve_digest("instagram_morning_digest")
+    afternoon_digest, afternoon_variant = _resolve_digest("instagram_afternoon_digest")
 
     lines = [
         "SimulaNewsMachine — Selection Summary",
@@ -871,22 +889,22 @@ def build_selection_summary(context: dict, draft_overrides: dict | None = None) 
         f"Ended at: {run_summary.get('ended_at', snapshot.get('timestamp', ''))}",
         f"Selected: {run_summary.get('articles_selected', len(snapshot.get('curated_stories', [])))}",
         "",
-        "Instagram Morning Digest:",
+        f"Instagram Morning Digest (variant {morning_variant}):",
     ]
-    for i, article in enumerate(plan.get("instagram_morning_digest", [])[:7], 1):
+    for i, article in enumerate(morning_digest[:7], 1):
         story = normalize_story(article)
         lines.append(f"{i}. {story.get('title')} | {story.get('link')}")
 
     lines.append("")
-    lines.append("Instagram Afternoon Digest:")
-    for i, article in enumerate(plan.get("instagram_afternoon_digest", [])[:7], 1):
+    lines.append(f"Instagram Afternoon Digest (variant {afternoon_variant}):")
+    for i, article in enumerate(afternoon_digest[:7], 1):
         story = normalize_story(article)
         lines.append(f"{i}. {story.get('title')} | {story.get('link')}")
 
-    if draft_overrides:
+    if active_overrides:
         lines.append("")
-        lines.append("Draft overrides:")
-        for key, value in sorted(draft_overrides.items()):
+        lines.append("Resolved overrides:")
+        for key, value in sorted(active_overrides.items()):
             lines.append(f"- {key}: {value}")
 
     brief_path = snapshot.get("brief_path") or run_summary.get("brief_file", "")

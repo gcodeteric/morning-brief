@@ -635,7 +635,11 @@ def _render_digest_variant_cards(channel: str, plan: dict, accent: str):
 
 
 def _render_digest_story_draft(channel: str, stories: list[dict]):
-    render_section_header("Selected Stories", "Session draft for this digest. Variant overrides remain the persistent control.", level=3)
+    render_section_header(
+        "Selected Stories",
+        "Session-only preview. Add/remove/reorder stays local to this browser session; only variant overrides are persisted.",
+        level=3,
+    )
     if not stories:
         render_empty_state("No stories in this digest", "There are no stories available for the current digest draft.")
         return
@@ -722,15 +726,20 @@ def _render_digest_editor(channel: str, label: str, output: dict, pack: dict, ca
     has_card = bool(card_lookup.get("morning_digest" if channel == "instagram_morning_digest" else "afternoon_digest", ""))
 
     render_section_header(label, "Review the active digest, compare variants, then inspect generated assets.")
+    render_notice(
+        "Persistence model",
+        "Save Variant Override only persists the selected variant (0/1/2). Manual story edits below are session-only preview and are not written back to the pipeline state.",
+        "warn",
+    )
     summary = st.columns(4)
     summary[0].metric("Stories", len(stories))
-    summary[1].metric("Active variant", current_variant)
+    summary[1].metric("Persisted variant", current_variant)
     summary[2].metric("Pack ready", "Yes" if has_pack else "Fallback")
     summary[3].metric("Card", "Yes" if has_card else "No")
 
     action_row = st.columns(4)
     with action_row[0]:
-        if st.button("Save as Active", key=f"{channel}_save_active", use_container_width=True, type="primary"):
+        if st.button("Save Variant Override", key=f"{channel}_save_active", use_container_width=True, type="primary"):
             _save_overrides_feedback()
     with action_row[1]:
         _copy_button("Copy Full Digest Text", _format_digest_copy_text(pack, stories), f"{channel}_copy_full", slot_key=f"{channel}_actions_slot")

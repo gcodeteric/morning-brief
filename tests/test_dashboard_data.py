@@ -112,6 +112,80 @@ class DashboardDataTests(unittest.TestCase):
 
             self.assertEqual(freshness["label"], "Stale")
 
+    def test_selection_summary_resolves_active_variants_correctly(self):
+        context = {
+            "snapshot": {
+                "run_status": "OK",
+                "timestamp": "2026-03-26T10:00:00+00:00",
+                "plan": {
+                    "instagram_morning_digest": [
+                        make_story("Morning Primary", "https://example.com/morning-primary"),
+                    ],
+                    "instagram_morning_digest_alternatives": [
+                        [make_story("Morning Alt 1", "https://example.com/morning-alt-1")],
+                        [make_story("Morning Alt 2", "https://example.com/morning-alt-2")],
+                    ],
+                    "instagram_afternoon_digest": [
+                        make_story("Afternoon Primary", "https://example.com/afternoon-primary", category="motorsport"),
+                    ],
+                    "instagram_afternoon_digest_alternatives": [
+                        [make_story("Afternoon Alt 1", "https://example.com/afternoon-alt-1", category="motorsport")],
+                    ],
+                },
+                "curated_stories": [make_story()],
+                "brief_path": "C:/brief.md",
+            },
+            "run_summary": {
+                "status": "OK",
+                "ended_at": "2026-03-26T10:00:00+00:00",
+                "articles_selected": 1,
+            },
+            "overrides": {
+                "instagram_morning_digest": 1,
+                "instagram_afternoon_digest": 0,
+            },
+            "cards": {"cards": []},
+        }
+
+        summary_primary = dashboard_data.build_selection_summary(context)
+        summary_alt = dashboard_data.build_selection_summary(
+            context,
+            {"instagram_morning_digest": 2, "instagram_afternoon_digest": 1},
+        )
+
+        self.assertIn("Instagram Morning Digest (variant 1):", summary_primary)
+        self.assertIn("Morning Alt 1", summary_primary)
+        self.assertNotIn("Morning Primary | https://example.com/morning-primary", summary_primary)
+
+        self.assertIn("Instagram Morning Digest (variant 2):", summary_alt)
+        self.assertIn("Morning Alt 2", summary_alt)
+        self.assertIn("Instagram Afternoon Digest (variant 1):", summary_alt)
+        self.assertIn("Afternoon Alt 1", summary_alt)
+
+    def test_selection_summary_invalid_variant_falls_back_to_primary_story_list(self):
+        context = {
+            "snapshot": {
+                "run_status": "OK",
+                "timestamp": "2026-03-26T10:00:00+00:00",
+                "plan": {
+                    "instagram_morning_digest": [make_story("Morning Primary", "https://example.com/primary")],
+                    "instagram_morning_digest_alternatives": [],
+                    "instagram_afternoon_digest": [],
+                },
+                "curated_stories": [make_story()],
+            },
+            "run_summary": {"status": "OK", "ended_at": "2026-03-26T10:00:00+00:00"},
+            "overrides": {},
+            "cards": {"cards": []},
+        }
+        summary = dashboard_data.build_selection_summary(
+            context,
+            {"instagram_morning_digest": 2},
+        )
+
+        self.assertIn("Instagram Morning Digest (variant 0):", summary)
+        self.assertIn("Morning Primary", summary)
+
 
 if __name__ == "__main__":
     unittest.main()

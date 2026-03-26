@@ -122,6 +122,52 @@ class FormatterTests(unittest.TestCase):
         self.assertIn("PROMPT 1 — INSTAGRAM", content)
         self.assertIn("Instagram editorial recommendation", content)
 
+    def test_empty_useless_minimax_section_is_suppressed(self):
+        curated = {
+            "selected": [make_article("Only Story", "sim_racing", 80, "https://example.com/only")],
+            "categories": {"sim_racing": 1},
+            "total_before_dedup": 1,
+            "total_after_dedup": 1,
+            "agent_outputs": [
+                {"article": {}, "post": "", "image_prompt": "", "voice_script": "", "instagram_pack": {}},
+                {"article": {}, "post": "", "image_prompt": "", "voice_script": "", "instagram_pack": {}},
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "brief.md"
+            formatter.format_brief(curated, output_path, plan=None, card_paths=None)
+            content = output_path.read_text(encoding="utf-8")
+
+        self.assertNotIn("# 🤖 POSTS GERADOS — PIPELINE MINIMAX M2.7", content)
+
+    def test_useful_minimax_section_is_retained(self):
+        article = make_article("Only Story", "sim_racing", 80, "https://example.com/only")
+        curated = {
+            "selected": [article],
+            "categories": {"sim_racing": 1},
+            "total_before_dedup": 1,
+            "total_after_dedup": 1,
+            "agent_outputs": [
+                {
+                    "article": article,
+                    "post": "Texto útil",
+                    "image_prompt": "",
+                    "voice_script": "",
+                    "instagram_pack": {},
+                    "qa": '{"average": 8.0, "approved": true}',
+                }
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "brief.md"
+            formatter.format_brief(curated, output_path, plan=None, card_paths=None)
+            content = output_path.read_text(encoding="utf-8")
+
+        self.assertIn("# 🤖 POSTS GERADOS — PIPELINE MINIMAX M2.7", content)
+        self.assertIn("Texto útil", content)
+
 
 if __name__ == "__main__":
     unittest.main()
