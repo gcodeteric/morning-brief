@@ -95,9 +95,9 @@ Supporting files:
 
 Typical operator flow today:
 
-1. Run the pipeline normally, or let Windows Scheduler run it.
-2. Open the latest brief on the Desktop.
-3. Review the planned selections:
+1. Double-click [INICIAR_DASHBOARD.bat](/C:/Users/berna/Desktop/Simula_Project/morning-brief/INICIAR_DASHBOARD.bat) to open the dashboard with a readiness check.
+2. If you need to run the pipeline first, use [SIMULA_CONTROL_CENTER.bat](/C:/Users/berna/Desktop/Simula_Project/morning-brief/SIMULA_CONTROL_CENTER.bat) and choose `Run pipeline + open dashboard`.
+3. Work from the dashboard first:
    - Instagram Morning Digest
    - Instagram Afternoon Digest
    - X
@@ -105,8 +105,8 @@ Typical operator flow today:
    - Reddit
    - Discord
 4. If agents are configured, review structured digest packs, image prompts, voice scripts, and QA.
-5. If needed, adjust `data/manual_overrides.json`.
-6. Use the dashboard for fast inspection, source links, override control, and copy-ready prompts.
+5. If needed, adjust `data/manual_overrides.json` from the dashboard or the control center.
+6. Open the latest brief on the Desktop when you need the full Markdown artifact.
 7. If email digest is enabled, use the mobile-friendly delivery as a secondary operating surface.
 
 ## Dashboard
@@ -138,6 +138,25 @@ Dashboard data model:
 - prefers `data/dashboard_latest_snapshot.json`
 - falls back to `run_summary.json`, brief file, overrides, and cards when the snapshot is missing
 - dry runs do not refresh the snapshot on purpose
+
+## Quick Launch
+
+Windows-first launcher entry points:
+
+- [INICIAR_DASHBOARD.bat](/C:/Users/berna/Desktop/Simula_Project/morning-brief/INICIAR_DASHBOARD.bat)
+  - starts the dashboard
+  - waits until the local Streamlit endpoint is reachable
+  - opens the browser only after readiness succeeds
+- [SIMULA_CONTROL_CENTER.bat](/C:/Users/berna/Desktop/Simula_Project/morning-brief/SIMULA_CONTROL_CENTER.bat)
+  - opens the operator menu
+  - `1. Run pipeline + open dashboard`
+  - `2. Open dashboard only`
+  - `3. Open manual overrides file`
+  - `4. Open latest brief folder`
+  - `5. Open cards folder`
+  - `6. Exit`
+
+These launchers are a Windows convenience layer. They respect the current project configuration rather than bypassing it.
 
 ## Manual overrides
 

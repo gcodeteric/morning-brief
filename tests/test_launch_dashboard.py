@@ -1,6 +1,7 @@
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from unittest import mock
 
 import launch_dashboard
@@ -50,6 +51,32 @@ class LaunchDashboardTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertEqual(events, ["start", "wait", "browser"])
+
+    def test_already_ready_dashboard_does_not_restart_streamlit(self):
+        with mock.patch.object(launch_dashboard, "is_dashboard_ready", return_value=True), \
+             mock.patch.object(launch_dashboard, "start_streamlit_dashboard") as starter, \
+             mock.patch.object(launch_dashboard.webbrowser, "open", return_value=True):
+            result = launch_dashboard.open_browser_when_ready(open_browser_flag=True)
+
+        self.assertEqual(result, 0)
+        starter.assert_not_called()
+
+    def test_resolve_operational_targets_match_real_project_layout(self):
+        with mock.patch.object(
+            launch_dashboard,
+            "ensure_overrides_file",
+            return_value=launch_dashboard.PROJECT_ROOT / "data" / "manual_overrides.json",
+        ):
+            overrides = launch_dashboard.resolve_operational_target("overrides")
+
+        brief_folder = launch_dashboard.resolve_operational_target("brief-folder")
+        cards_folder = launch_dashboard.resolve_operational_target("cards-folder")
+        project_root = launch_dashboard.resolve_operational_target("project-root")
+
+        self.assertEqual(overrides, launch_dashboard.PROJECT_ROOT / "data" / "manual_overrides.json")
+        self.assertEqual(brief_folder, Path(launch_dashboard.OUTPUT_FILE).parent)
+        self.assertEqual(cards_folder, launch_dashboard.CARDS_DIR)
+        self.assertEqual(project_root, launch_dashboard.PROJECT_ROOT)
 
 
 if __name__ == "__main__":
