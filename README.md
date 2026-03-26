@@ -325,6 +325,11 @@ O dashboard serve para:
 - rever prompts, image prompts, voice scripts, QA, cards e brief
 - editar e guardar overrides
 
+Foi desenhado como um painel interno limpo e rápido para o fluxo diário:
+- links directos para fontes
+- acesso imediato a prompts, scripts, cards e brief
+- controlo simples dos digests e overrides sem substituir o pipeline CLI
+
 O dashboard usa o latest-run snapshot quando ele existe:
 - `data/dashboard_latest_snapshot.json`
 
