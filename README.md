@@ -309,6 +309,13 @@ Se os agentes falharem ou não estiverem configurados:
 
 Existe um dashboard interno opcional para operações diárias de conteúdo.
 
+## Quick Launch
+
+- `INICIAR_DASHBOARD.bat` -> arranca o dashboard e só abre o browser quando a interface estiver realmente pronta
+- `SIMULA_CONTROL_CENTER.bat` -> abre o menu operacional para pipeline, dashboard, overrides, brief e cards
+
+Os launchers não substituem o uso por CLI. São uma camada opcional para operação diária no Windows.
+
 Lançar com:
 
 ```bash
