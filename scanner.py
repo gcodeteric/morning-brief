@@ -87,46 +87,51 @@ def _scan_single_feed(feed_info):
         lookback_cutoff = now - timedelta(hours=HOURS_LOOKBACK)
 
         for entry in parsed.entries:
-            title = entry.get("title", "").strip()
-            link = entry.get("link", "").strip()
+            try:
+                title = str(entry.get("title") or "").strip()
+                link = str(entry.get("link") or "").strip()
 
-            if not title or not link:
+                if not title or not link:
+                    continue
+
+                # Extrair summary
+                summary = ""
+                if entry.get("summary"):
+                    summary = entry["summary"]
+                elif entry.get("description"):
+                    summary = entry["description"]
+                summary = str(summary or "")
+                # Limpar HTML tags, unescape entities, e truncar
+                summary = re.sub(r"<[^>]+>", " ", summary)
+                summary = html.unescape(summary)
+                summary = re.sub(r"\s+", " ", summary).strip()
+                summary = summary[:300]
+
+                # Parse da data
+                pub_date = _parse_date(entry)
+                no_date = pub_date is None
+
+                if pub_date:
+                    # Ignorar datas futuras
+                    if pub_date > now + timedelta(hours=2):
+                        continue
+                    # Verificar se está na janela de lookback
+                    if pub_date < lookback_cutoff:
+                        continue
+
+                articles.append({
+                    "title": title,
+                    "link": link,
+                    "summary": summary,
+                    "published": pub_date.isoformat() if pub_date else None,
+                    "source": name,
+                    "category": category,
+                    "priority": priority,
+                    "no_date": no_date,
+                })
+            except Exception as entry_err:
+                logger.warning(f"Entrada malformada ignorada no feed '{name}': {entry_err}")
                 continue
-
-            # Extrair summary
-            summary = ""
-            if entry.get("summary"):
-                summary = entry["summary"]
-            elif entry.get("description"):
-                summary = entry["description"]
-            # Limpar HTML tags, unescape entities, e truncar
-            summary = re.sub(r"<[^>]+>", " ", summary)
-            summary = html.unescape(summary)
-            summary = re.sub(r"\s+", " ", summary).strip()
-            summary = summary[:300]
-
-            # Parse da data
-            pub_date = _parse_date(entry)
-            no_date = pub_date is None
-
-            if pub_date:
-                # Ignorar datas futuras
-                if pub_date > now + timedelta(hours=2):
-                    continue
-                # Verificar se está na janela de lookback
-                if pub_date < lookback_cutoff:
-                    continue
-
-            articles.append({
-                "title": title,
-                "link": link,
-                "summary": summary,
-                "published": pub_date.isoformat() if pub_date else None,
-                "source": name,
-                "category": category,
-                "priority": priority,
-                "no_date": no_date,
-            })
 
         # FIX 1.1 — Distinguir OK de EMPTY
         if articles:

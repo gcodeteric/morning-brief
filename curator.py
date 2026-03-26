@@ -329,6 +329,10 @@ def _load_seen_links():
     except Exception:
         return {}
 
+    if not isinstance(data, dict):
+        logger.warning("seen_links.json inválido: esperado object JSON na raiz")
+        return {}
+
     cutoff = datetime.now(timezone.utc) - timedelta(hours=SEEN_LINKS_MAX_AGE_HOURS)
     cleaned = {}
     for link, value in data.items():
