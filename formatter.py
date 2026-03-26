@@ -260,6 +260,65 @@ def _format_digest_pack_for_brief(pack):
     return "\n".join(lines)
 
 
+def _format_qa_summary_for_brief(qa_raw):
+    if not qa_raw:
+        return "QA: não disponível"
+    try:
+        qa_data = json.loads(qa_raw)
+        average = qa_data.get("average", "N/A")
+        approved = qa_data.get("approved", False)
+        issues = qa_data.get("issues", []) or []
+        lines = [
+            f"QA status: {'APROVADO' if approved else 'REVISTO / NÃO APROVADO'}",
+            f"QA média: {average}/10" if average != "N/A" else "QA média: N/A",
+        ]
+        if issues:
+            lines.append("QA issues:")
+            for issue in issues:
+                lines.append(f"- {issue}")
+        return "\n".join(lines)
+    except Exception:
+        return "QA: resposta não parseável"
+
+
+def _format_digest_output_for_brief(label, output):
+    output = output or {}
+    pack = output.get("instagram_pack", {}) if isinstance(output, dict) else {}
+    lines = [f"### {label}", ""]
+
+    digest_type = output.get("digest_type", "N/A")
+    lines.append(f"Tipo de digest pipeline: {digest_type}")
+    lines.append("")
+
+    if isinstance(pack, dict) and pack:
+        lines.append("Pack Instagram estruturado:")
+        lines.append(_format_digest_pack_for_brief(pack))
+        lines.append("")
+    else:
+        lines.append("Pack Instagram estruturado: não disponível")
+        lines.append("")
+
+    lines.append(_format_qa_summary_for_brief(output.get("qa", "")))
+    lines.append("")
+
+    if output.get("image_prompt"):
+        lines.append("Prompt de imagem (agente image_director):")
+        lines.append(output.get("image_prompt", ""))
+        lines.append("")
+
+    if output.get("voice_script"):
+        lines.append("Script de voz (agente voice_director):")
+        lines.append(output.get("voice_script", ""))
+        lines.append("")
+
+    if output.get("post"):
+        lines.append("Texto final do digest:")
+        lines.append(output.get("post", ""))
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def format_brief(curated, output_path, plan=None, card_paths=None):
     """Gera o ficheiro .md completo com brief + 6 prompts."""
     selected = curated["selected"]
@@ -424,18 +483,22 @@ def format_brief(curated, output_path, plan=None, card_paths=None):
     afternoon_digest_block = _generate_news_block(ig_afternoon_digest) if ig_afternoon_digest else "Sem stories suficientes no digest da tarde."
     reddit_block = _generate_news_block(reddit_arts) if reddit_arts else "Sem artigos elegíveis hoje."
 
-    if ig_morning_pack or ig_afternoon_pack:
+    if ig_morning_output or ig_afternoon_output or ig_morning_pack or ig_afternoon_pack:
         md.append("---")
         md.append("")
-        md.append("## Instagram digest packs gerados")
+        md.append("## Instagram digest outputs — Pipeline MiniMax")
         md.append("")
-        if ig_morning_pack:
-            md.append("### Morning Digest")
-            md.append(_format_digest_pack_for_brief(ig_morning_pack))
+        if ig_morning_output or ig_morning_pack:
+            md.append(_format_digest_output_for_brief(
+                "Morning Digest — Agent Output",
+                ig_morning_output or {"instagram_pack": ig_morning_pack, "digest_type": "morning_digest"},
+            ))
             md.append("")
-        if ig_afternoon_pack:
-            md.append("### Afternoon Digest")
-            md.append(_format_digest_pack_for_brief(ig_afternoon_pack))
+        if ig_afternoon_output or ig_afternoon_pack:
+            md.append(_format_digest_output_for_brief(
+                "Afternoon Digest — Agent Output",
+                ig_afternoon_output or {"instagram_pack": ig_afternoon_pack, "digest_type": "afternoon_digest"},
+            ))
             md.append("")
 
     md.append("---")
@@ -749,11 +812,11 @@ REGRAS:
                 md.append("**Hashtags:** " + " ".join(hashtags))
                 md.append("")
             if img:
-                md.append("**Prompt de Imagem:**")
+                md.append("**Prompt de Imagem (agente image_director):**")
                 md.append(f"```\n{img}\n```")
                 md.append("")
             if voice:
-                md.append("**Script de Voz (ElevenLabs):**")
+                md.append("**Script de Voz (agente voice_director / ElevenLabs):**")
                 md.append(f"```\n{voice}\n```")
                 md.append("")
 

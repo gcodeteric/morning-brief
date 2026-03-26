@@ -1,8 +1,6 @@
 {
-  "instagram_morning_digest": 1,
-  "instagram_afternoon_digest": 0,
-  "x_thread_1": 1,
-  "x_thread_2": 0,
+  "instagram_morning_digest": 0,
+  "instagram_afternoon_digest": 1,
   "youtube_daily": 2,
   "discord_post": 0
 }

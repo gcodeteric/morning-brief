@@ -19,6 +19,9 @@ client = OpenAI(api_key=MINIMAX_API_KEY, base_url=MINIMAX_BASE_URL) if MINIMAX_A
 
 AGENT_PROMPTS = {
 
+# ============================================================================
+# Single-article editorial prompts
+# ============================================================================
 "analyst": """
 És um analista de conteúdo especializado em sim racing e motorsport.
 Recebes um artigo e devolves EXATAMENTE este JSON (zero texto extra):
@@ -85,6 +88,9 @@ Devolve EXATAMENTE este JSON (zero texto extra):
 }
 """,
 
+# ============================================================================
+# Shared multimodal generation prompts
+# ============================================================================
 "image_director": """
 Generates image prompts for DALL-E / GPT-4o for the Simula Project.
 
@@ -113,6 +119,9 @@ RULES:
 OUTPUT: clean script only, ready to paste into ElevenLabs.
 """,
 
+# ============================================================================
+# Single-article QA prompt
+# ============================================================================
 "qa": """
 És o editor-chefe do Simula Project. Validas posts antes de publicar.
 Devolves EXATAMENTE este JSON (zero texto extra):
@@ -141,6 +150,9 @@ REGRAS:
 - Se average < 7.0, preencher improved_post
 """,
 
+# ============================================================================
+# Instagram digest prompts
+# ============================================================================
 "instagram_digest_analyst": """
 És um analista editorial de Instagram para o Simula Project.
 Recebes um conjunto de 4 a 7 notícias e devolves EXATAMENTE este JSON (zero texto extra):
@@ -209,6 +221,9 @@ REGRAS:
 - responder APENAS com JSON
 """,
 
+# ============================================================================
+# Instagram digest QA prompt
+# ============================================================================
 "instagram_digest_qa": """
 És o editor-chefe do Simula Project. Validas carrosséis editoriais antes de publicar.
 Devolves EXATAMENTE este JSON (zero texto extra):

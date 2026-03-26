@@ -133,6 +133,7 @@ def build_email_digest(curated, plan, output_path, card_paths=None) -> dict:
 
         lines.append(f"Tema: {pack.get('digest_theme', 'N/A')}")
         lines.append(f"Cover Hook: {pack.get('cover_hook', 'N/A')}")
+        lines.append("Stories do digest:")
         for i, article in enumerate(digest_articles[:7], 1):
             slide = slides[i - 1] if i - 1 < len(slides) and isinstance(slides[i - 1], dict) else {}
             lines.append(_digest_story_line(i, article, slide))
@@ -149,11 +150,11 @@ def build_email_digest(curated, plan, output_path, card_paths=None) -> dict:
             lines.append(" ".join(qa["hashtags"]))
         if digest_output.get("image_prompt"):
             lines.append("")
-            lines.append("Prompt de imagem:")
+            lines.append("Prompt de imagem (agente image_director):")
             lines.append(digest_output.get("image_prompt", ""))
         if digest_output.get("voice_script"):
             lines.append("")
-            lines.append("Script de voz:")
+            lines.append("Script de voz (agente voice_director):")
             lines.append(digest_output.get("voice_script", ""))
         return "\n".join(lines)
 
@@ -179,6 +180,7 @@ def build_email_digest(curated, plan, output_path, card_paths=None) -> dict:
             f'{html.escape(pack.get("digest_theme", "N/A"))}</p>',
             f'<p style="margin:0 0 10px 0;"><strong>Cover Hook:</strong> '
             f'{html.escape(pack.get("cover_hook", "N/A"))}</p>',
+            '<p style="margin:0 0 6px 0;"><strong>Stories do digest</strong></p>',
         ]
 
         for i, article in enumerate(digest_articles[:7], 1):
@@ -206,13 +208,13 @@ def build_email_digest(curated, plan, output_path, card_paths=None) -> dict:
                 f'{html.escape(" ".join(qa["hashtags"]))}</p>'
             )
         if digest_output.get("image_prompt"):
-            parts.append('<p style="margin:8px 0 4px 0;"><strong>Prompt de imagem</strong></p>')
+            parts.append('<p style="margin:8px 0 4px 0;"><strong>Prompt de imagem (agente)</strong></p>')
             parts.append(
                 f'<p style="margin:0 0 8px 0;white-space:pre-wrap;color:#444;">'
                 f'{html.escape(digest_output.get("image_prompt", ""))}</p>'
             )
         if digest_output.get("voice_script"):
-            parts.append('<p style="margin:8px 0 4px 0;"><strong>Script de voz</strong></p>')
+            parts.append('<p style="margin:8px 0 4px 0;"><strong>Script de voz (agente)</strong></p>')
             parts.append(
                 f'<p style="margin:0;white-space:pre-wrap;color:#444;">'
                 f'{html.escape(digest_output.get("voice_script", ""))}</p>'
@@ -354,13 +356,13 @@ def build_email_digest(curated, plan, output_path, card_paths=None) -> dict:
     if has_instagram_digests:
         text_parts.append("")
         text_parts.append(_text_instagram_digest_block(
-            "Instagram — Morning Digest",
+            "Instagram — Morning Digest Carousel",
             morning_digest,
             morning_output,
         ))
         text_parts.append("")
         text_parts.append(_text_instagram_digest_block(
-            "Instagram — Afternoon Digest",
+            "Instagram — Afternoon Digest Carousel",
             afternoon_digest,
             afternoon_output,
         ))
@@ -419,12 +421,12 @@ def build_email_digest(curated, plan, output_path, card_paths=None) -> dict:
 
     if has_instagram_digests:
         html_parts.append(_html_instagram_digest_block(
-            "Instagram — Morning Digest",
+            "Instagram — Morning Digest Carousel",
             morning_digest,
             morning_output,
         ))
         html_parts.append(_html_instagram_digest_block(
-            "Instagram — Afternoon Digest",
+            "Instagram — Afternoon Digest Carousel",
             afternoon_digest,
             afternoon_output,
         ))

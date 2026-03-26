@@ -243,6 +243,12 @@ def _editorial_card(article):
 
 
 def _digest_cover_article(digest_articles, digest_pack, fallback_category, fallback_label):
+    """
+    Compatibilidade mínima para digests:
+    - usa cover_hook/digest_theme como título de capa
+    - usa notes_for_design como subtítulo curto se existir
+    - não faz composição completa de carrossel; apenas cria um cover seguro
+    """
     digest_articles = digest_articles or []
     digest_pack = digest_pack or {}
     lead_article = digest_articles[0] if digest_articles else {}
@@ -288,6 +294,9 @@ def generate_instagram_cards(plan):
     if not GENERATE_IMAGES:
         return {}
     results = {}
+    # Suporte actual a digests é deliberadamente mínimo:
+    # gerar capas seguras para morning/afternoon digest sem redesenhar o sistema.
+    # Se o pack não existir, o fallback mantém a lógica antiga por artigo.
     morning_digest = plan.get("instagram_morning_digest", []) or []
     afternoon_digest = plan.get("instagram_afternoon_digest", []) or []
     morning_pack = plan.get("instagram_morning_pack", {}) or {}

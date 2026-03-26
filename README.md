@@ -8,8 +8,10 @@ Sistema automático que todas as manhãs te entrega um ficheiro no Desktop com a
 - Inclui 57 feeds RSS prontos a usar + suporte para ~22 canais YouTube adicionais (correr channel_id_extractor.py para activar)
 - Filtra, pontua e seleciona as 15 notícias mais relevantes
 - Gera um ficheiro `SIMULA_BRIEF_HOJE.md` no teu Desktop
-- Inclui 6 prompts prontos para copiar/colar no Claude e criar posts
+- Gera 6 blocos operacionais para redes sociais no brief final
 - Instagram funciona como 2 carrosséis editoriais por dia: manhã (sim racing / nostalgia / racing games / PT) e tarde (motorsport)
+- Se os agentes MiniMax estiverem configurados, acrescenta packs estruturados, prompt de imagem, script de voz e QA ao brief
+- Pode enviar um email digest mobile-friendly com a seleção final resolvida
 
 ---
 
@@ -67,6 +69,7 @@ Deves ver mensagens como:
 Passo 1: Scanning feeds...
 Passo 2: Curating...
 Passo 3: Planning...
+Passo 3.5: Instagram digest pipeline...
 Passo 4: Formatting...
 === Concluido com sucesso ===
 ```
@@ -87,8 +90,56 @@ Se pedir permissão de administrador, clicar "Sim".
 
 1. ☀️ Acordar
 2. 📄 Abrir **SIMULA_BRIEF_HOJE.md** no Desktop
-3. 📋 Copiar cada prompt → colar no Claude → publicar
-4. ✅ **15 minutos. Feito.**
+3. 🎛️ Rever os blocos editoriais: Instagram manhã, Instagram tarde, X, YouTube, Reddit e Discord
+4. 🧠 Se os agentes estiverem activos, usar os packs gerados, o prompt de imagem e o script de voz já renderizados no brief
+5. 📬 Se o email digest estiver activo, podes trabalhar directamente a partir do email no telemóvel
+6. ✅ **15 minutos. Feito.**
+
+---
+
+## Modelo de conteúdo actual
+
+O sistema continua a gerar um brief diário, mas o modelo actual do Instagram já não é:
+
+- 1 notícia = 1 post
+
+Agora é:
+
+- **Morning Digest Carousel**
+  - sim_racing
+  - nostalgia
+  - racing_games
+  - histórias PT / Portugal-related quando existirem
+- **Afternoon Digest Carousel**
+  - motorsport
+
+Tamanho ideal:
+
+- **5 a 7 histórias por carrossel**
+
+O objectivo é editorial:
+
+- um fio condutor por carrossel
+- uma história por slide
+- caption que resume o conjunto
+- pergunta final à comunidade
+
+---
+
+## Fluxo actual de execução
+
+Execução real do pipeline:
+
+1. **Step 1: Scanning**
+2. **Step 2: Curating**
+3. **Step 3: Planning**
+4. **Step 3.5: Instagram digest pipeline** (opcional, se houver agentes configurados)
+5. **Step 4: Formatting**
+6. **Entrega opcional**:
+   - email digest
+   - social cards
+
+Se qualquer etapa opcional falhar, o brief continua a ser gerado normalmente.
 
 ---
 
@@ -148,6 +199,11 @@ Quando pronto:
 2. Definir GENERATE_IMAGES = True em config.py
 3. pip install Pillow
 
+Notas:
+- o suporte actual a digests no `card_generator.py` é **mínimo e seguro**
+- o cover pode reutilizar `cover_hook` e `notes_for_design` quando existirem
+- não há redesign completo de carrosséis neste patch; se faltar pack, o sistema cai para fallback seguro
+
 ## Overrides manuais por canal
 
 Podes forçar o sistema a usar alternativas diferentes criando:
@@ -186,6 +242,10 @@ Ao fazer duplo clique:
 - cria o `manual_overrides.json` se ainda não existir
 - abre o JSON para edição rápida no Windows
 
+Compatibilidade:
+- os overrides antigos continuam suportados quando fizer sentido
+- o formato recomendado para Instagram é agora por digest, não por notícia individual
+
 ## Envio automático por email
 
 O sistema pode enviar automaticamente o content pack diário por email após gerar o brief.
@@ -209,3 +269,41 @@ Recomendação:
 usar SMTP do Gmail, Outlook ou outro fornecedor equivalente.
 
 Se o envio falhar, o brief continua a ser gerado normalmente.
+
+O email usa a **seleção final já resolvida** pelo planner + manual overrides.
+
+Quando configurado, envia:
+- corpo texto simples mobile-friendly
+- corpo HTML mobile-friendly
+- anexo do `.md` final
+- social cards, se existirem e estiverem activados
+
+## Onde vivem os prompts
+
+- **Instagram digest packs e prompts editoriais estruturados**:
+  - definidos em `agents.py`
+  - renderizados no brief por `formatter.py`
+- **Prompts X / YouTube / Reddit / Discord**:
+  - renderizados no `formatter.py`
+- **Prompt de imagem**:
+  - gerado pelo agente `image_director` em `agents.py`
+- **Script de voz**:
+  - gerado pelo agente `voice_director` em `agents.py`
+- **QA editorial**:
+  - gerado em `agents.py`
+  - mostrado no brief e reutilizado onde aplicável
+
+Se os agentes falharem ou não estiverem configurados:
+- o brief continua a ser gerado
+- os digests de Instagram continuam com fallback seguro baseado no planner
+
+## How to validate today's run
+
+1. correr `python main.py --dry-run`
+2. confirmar que o run chega a `=== Concluido com sucesso ===`
+3. confirmar que existem **Instagram — Morning Digest** e **Instagram — Afternoon Digest**
+4. se os agentes estiverem configurados, confirmar que aparecem:
+   - digest packs
+   - prompt de imagem
+   - script de voz
+5. se usares overrides, confirmar que `manual_overrides.json` foi aplicado no brief/log
