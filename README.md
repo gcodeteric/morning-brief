@@ -307,3 +307,23 @@ Se os agentes falharem ou não estiverem configurados:
    - prompt de imagem
    - script de voz
 5. se usares overrides, confirmar que `manual_overrides.json` foi aplicado no brief/log
+
+## Internal Dashboard
+
+Existe um dashboard interno opcional para operações diárias de conteúdo.
+
+Lançar com:
+
+```bash
+streamlit run dashboard_app.py
+```
+
+O dashboard serve para:
+- inspecionar o latest run
+- navegar stories curadas com links directos
+- controlar Morning/AFternoon Instagram digests
+- rever prompts, image prompts, voice scripts, QA, cards e brief
+- editar e guardar overrides
+
+Não substitui o pipeline CLI.
+É uma camada operacional por cima do sistema actual.

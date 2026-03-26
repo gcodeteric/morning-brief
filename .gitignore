@@ -6,6 +6,7 @@ __pycache__/
 logs/*.log
 archive/*.md
 data/run_summary.json
+data/dashboard_latest_snapshot.json
 data/seen_links.json
 data/extracted_channel_ids.json
 data/alerts.json

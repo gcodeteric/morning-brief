@@ -272,6 +272,21 @@ def main(dry_run: bool = False):
 
             logging.info("   -> run_summary.json actualizado")
 
+            # Snapshot leve para dashboard interno (não crítico)
+            try:
+                from dashboard_data import save_dashboard_snapshot
+                snapshot_path = save_dashboard_snapshot(
+                    curated=curated,
+                    plan=editorial_plan or {},
+                    card_paths=card_paths,
+                    brief_path=OUTPUT_FILE,
+                    run_summary=summary,
+                )
+                if snapshot_path:
+                    logging.info(f"   -> dashboard snapshot actualizado em {snapshot_path}")
+            except Exception as e:
+                logging.warning(f"Dashboard snapshot falhou (não crítico): {e}")
+
             # Alertas operacionais (não crítico)
             try:
                 from alerts import check_and_alert
