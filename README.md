@@ -325,5 +325,14 @@ O dashboard serve para:
 - rever prompts, image prompts, voice scripts, QA, cards e brief
 - editar e guardar overrides
 
+O dashboard usa o latest-run snapshot quando ele existe:
+- `data/dashboard_latest_snapshot.json`
+
+Se o snapshot não existir, cai em fallback gracioso com base no:
+- brief
+- `run_summary.json`
+- overrides
+- cards disponíveis
+
 Não substitui o pipeline CLI.
 É uma camada operacional por cima do sistema actual.
