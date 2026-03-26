@@ -145,8 +145,10 @@ Windows-first launcher entry points:
 
 - [INICIAR_DASHBOARD.bat](/C:/Users/berna/Desktop/Simula_Project/morning-brief/INICIAR_DASHBOARD.bat)
   - starts the dashboard
-  - waits until the local Streamlit endpoint is reachable
-  - opens the browser only after readiness succeeds
+  - prefers the default local dashboard port
+  - automatically falls back to the next safe local port if the default one is busy
+  - waits until the final Streamlit URL is reachable
+  - opens the browser only after readiness succeeds and prints the final URL in the console
 - [SIMULA_CONTROL_CENTER.bat](/C:/Users/berna/Desktop/Simula_Project/morning-brief/SIMULA_CONTROL_CENTER.bat)
   - opens the operator menu
   - `1. Run pipeline + open dashboard`
@@ -253,7 +255,9 @@ Windows scheduler helper:
 Windows launchers:
 
 - [INICIAR_DASHBOARD.bat](/C:/Users/berna/Desktop/Simula_Project/morning-brief/INICIAR_DASHBOARD.bat)
-  - starts the dashboard and opens the browser only after readiness succeeds
+  - starts the dashboard on the default port when free
+  - falls back automatically to the next safe local port when needed
+  - opens the browser only after readiness succeeds and prints the final URL
 - [SIMULA_CONTROL_CENTER.bat](/C:/Users/berna/Desktop/Simula_Project/morning-brief/SIMULA_CONTROL_CENTER.bat)
   - operator menu for pipeline, dashboard, overrides, brief folder, and cards folder
 

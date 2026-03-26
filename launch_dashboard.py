@@ -21,11 +21,30 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 DASHBOARD_APP = PROJECT_ROOT / "dashboard_app.py"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8501
+DEFAULT_PORT_FALLBACK_ATTEMPTS = 5
 DEFAULT_TIMEOUT_SECONDS = 45
 
 
 def build_dashboard_url(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> str:
     return f"http://{host}:{port}/"
+
+
+def build_port_candidates(
+    preferred_port: int = DEFAULT_PORT,
+    attempts: int = DEFAULT_PORT_FALLBACK_ATTEMPTS,
+) -> list[int]:
+    attempts = max(int(attempts), 1)
+    return list(range(preferred_port, preferred_port + attempts))
+
+
+def is_port_available(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+        except OSError:
+            return False
+    return True
 
 
 def is_port_in_use(host: str, port: int) -> bool:
@@ -123,6 +142,17 @@ def resolve_operational_target(name: str) -> Path:
     return Path(mapping[name])
 
 
+def choose_dashboard_port(
+    host: str = DEFAULT_HOST,
+    preferred_port: int = DEFAULT_PORT,
+    attempts: int = DEFAULT_PORT_FALLBACK_ATTEMPTS,
+) -> int | None:
+    for candidate_port in build_port_candidates(preferred_port, attempts):
+        if is_port_available(host, candidate_port):
+            return candidate_port
+    return None
+
+
 def open_browser_when_ready(
     python_executable: str | None = None,
     host: str = DEFAULT_HOST,
@@ -134,45 +164,58 @@ def open_browser_when_ready(
         print(f"ERRO: dashboard_app.py não foi encontrado em {DASHBOARD_APP}")
         return 1
 
-    url = build_dashboard_url(host, port)
-    print(f"Dashboard target: {url}")
+    preferred_url = build_dashboard_url(host, port)
+    print("A iniciar o dashboard Simula...")
 
-    if is_dashboard_ready(url):
-        print("Dashboard já está online.")
+    if is_dashboard_ready(preferred_url):
+        print(f"Dashboard já está online em: {preferred_url}")
         if open_browser_flag:
-            if webbrowser.open(url):
-                print("Browser aberto com sucesso.")
+            if webbrowser.open(preferred_url):
+                print("A abrir o browser no dashboard já disponível.")
             else:
-                print(f"Não foi possível abrir o browser automaticamente. Abre manualmente: {url}")
+                print(f"Não foi possível abrir o browser automaticamente. Abre manualmente: {preferred_url}")
         return 0
 
-    if is_port_in_use(host, port):
-        print(f"ERRO: a porta {port} já está ocupada, mas o dashboard não respondeu como pronto.")
-        print(f"Confirma se já existe outra instância e tenta abrir manualmente: {url}")
+    chosen_port = choose_dashboard_port(host=host, preferred_port=port)
+    if chosen_port is None:
+        candidates = build_port_candidates(port)
+        print("ERRO: não foi possível encontrar uma porta disponível para o dashboard.")
+        print(f"Portas tentadas: {', '.join(str(candidate) for candidate in candidates)}")
         return 1
+
+    if chosen_port != port:
+        print(f"A porta preferida {port} está ocupada. Vou usar a próxima porta disponível.")
+
+    final_url = build_dashboard_url(host, chosen_port)
+    print(f"URL final do dashboard: {final_url}")
 
     try:
-        process = start_streamlit_dashboard(python_executable=python_executable, host=host, port=port)
+        process = start_streamlit_dashboard(
+            python_executable=python_executable,
+            host=host,
+            port=chosen_port,
+        )
     except Exception as exc:
         print(f"ERRO: não foi possível arrancar o dashboard: {exc}")
+        print(f"URL prevista: {final_url}")
         return 1
 
-    print("A iniciar o dashboard...")
     print("A aguardar readiness local antes de abrir o browser...")
-    ready = wait_for_dashboard(url, timeout_seconds=timeout_seconds, process=process)
+    ready = wait_for_dashboard(final_url, timeout_seconds=timeout_seconds, process=process)
     if not ready:
         print("ERRO: o dashboard não ficou pronto dentro do tempo esperado.")
-        print(f"URL esperada: {url}")
+        print(f"URL esperada: {final_url}")
         return 1
 
-    print("Dashboard online.")
+    print(f"Dashboard pronto em: {final_url}")
     if open_browser_flag:
-        if webbrowser.open(url):
-            print("Browser aberto depois da readiness check.")
+        print("A abrir o browser depois da readiness check.")
+        if webbrowser.open(final_url):
+            print(f"Dashboard em execução em: {final_url}")
         else:
-            print(f"Não foi possível abrir o browser automaticamente. Abre manualmente: {url}")
+            print(f"Não foi possível abrir o browser automaticamente. Abre manualmente: {final_url}")
     else:
-        print(f"Browser automático desactivado. Abre manualmente: {url}")
+        print(f"Browser automático desactivado. Abre manualmente: {final_url}")
     return 0
 
 
