@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from config import (
@@ -124,6 +124,13 @@ def _coerce_int(value, default: int = 0) -> int:
         return default
 
 
+def _coerce_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
 def _has_useful_output(output: dict) -> bool:
     output = output or {}
     return any([
@@ -132,6 +139,37 @@ def _has_useful_output(output: dict) -> bool:
         output.get("image_prompt"),
         output.get("voice_script"),
     ])
+
+
+def _parse_datetime(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        text = str(value).strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        dt = datetime.fromisoformat(text)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _safe_mtime_iso(path_like) -> str:
+    try:
+        path = Path(path_like)
+        if not path.exists():
+            return ""
+        return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+    except Exception:
+        return ""
+
+
+def _hours_since(dt: datetime | None) -> float | None:
+    if dt is None:
+        return None
+    now = datetime.now(dt.tzinfo or timezone.utc)
+    delta = now - dt
+    return round(max(delta.total_seconds(), 0) / 3600, 2)
 
 
 def _atomic_write_json(path: Path, payload: dict) -> None:
@@ -187,6 +225,147 @@ def normalize_card_paths(card_paths) -> dict:
     return normalized
 
 
+def _normalize_agent_metrics(metrics) -> dict:
+    if not isinstance(metrics, dict):
+        return {
+            "scope": "",
+            "timeout_seconds": 0.0,
+            "calls_attempted": 0,
+            "calls_succeeded": 0,
+            "calls_failed": 0,
+            "calls_timed_out": 0,
+            "calls_skipped": 0,
+            "durations": {},
+            "parse_failures": [],
+            "total_duration_sec": 0.0,
+            "useful_output": False,
+        }
+
+    durations = metrics.get("durations", {})
+    normalized_durations = {}
+    if isinstance(durations, dict):
+        for key, value in durations.items():
+            normalized_durations[str(key)] = round(_coerce_float(value, 0.0), 3)
+
+    parse_failures = []
+    raw_failures = metrics.get("parse_failures", [])
+    if isinstance(raw_failures, list):
+        for item in raw_failures:
+            if isinstance(item, dict):
+                parse_failures.append({
+                    "stage": str(item.get("stage", "")),
+                    "error": str(item.get("error", "")),
+                })
+            elif item:
+                parse_failures.append({"stage": str(item), "error": ""})
+
+    return {
+        "scope": str(metrics.get("scope", "") or ""),
+        "timeout_seconds": round(_coerce_float(metrics.get("timeout_seconds"), 0.0), 3),
+        "calls_attempted": _coerce_int(metrics.get("calls_attempted"), 0),
+        "calls_succeeded": _coerce_int(metrics.get("calls_succeeded"), 0),
+        "calls_failed": _coerce_int(metrics.get("calls_failed"), 0),
+        "calls_timed_out": _coerce_int(metrics.get("calls_timed_out"), 0),
+        "calls_skipped": _coerce_int(metrics.get("calls_skipped"), 0),
+        "durations": normalized_durations,
+        "parse_failures": parse_failures,
+        "total_duration_sec": round(_coerce_float(metrics.get("total_duration_sec"), 0.0), 3),
+        "useful_output": bool(metrics.get("useful_output", False)),
+    }
+
+
+def _aggregate_agent_metrics(outputs) -> dict:
+    summary = {
+        "pipelines": 0,
+        "calls_attempted": 0,
+        "calls_succeeded": 0,
+        "calls_failed": 0,
+        "calls_timed_out": 0,
+        "calls_skipped": 0,
+        "parse_failures": 0,
+        "total_duration_sec": 0.0,
+        "useful_outputs": 0,
+    }
+    for output in outputs or []:
+        metrics = _normalize_agent_metrics((output or {}).get("agent_metrics", {}))
+        if not any([
+            metrics.get("calls_attempted"),
+            metrics.get("calls_succeeded"),
+            metrics.get("calls_failed"),
+            metrics.get("calls_timed_out"),
+            metrics.get("calls_skipped"),
+            metrics.get("total_duration_sec"),
+        ]):
+            continue
+        summary["pipelines"] += 1
+        summary["calls_attempted"] += metrics.get("calls_attempted", 0)
+        summary["calls_succeeded"] += metrics.get("calls_succeeded", 0)
+        summary["calls_failed"] += metrics.get("calls_failed", 0)
+        summary["calls_timed_out"] += metrics.get("calls_timed_out", 0)
+        summary["calls_skipped"] += metrics.get("calls_skipped", 0)
+        summary["parse_failures"] += len(metrics.get("parse_failures", []))
+        summary["total_duration_sec"] += metrics.get("total_duration_sec", 0.0)
+        if metrics.get("useful_output"):
+            summary["useful_outputs"] += 1
+    summary["total_duration_sec"] = round(summary["total_duration_sec"], 3)
+    return summary
+
+
+def _build_freshness_status(snapshot: dict, run_summary: dict, brief: dict) -> dict:
+    snapshot_exists = bool(snapshot.get("exists", False))
+    run_summary_exists = bool(run_summary.get("exists", False))
+    brief_exists = bool(brief.get("exists", False))
+
+    snapshot_dt = _parse_datetime(snapshot.get("timestamp", ""))
+    run_dt = _parse_datetime(run_summary.get("ended_at", ""))
+    brief_dt = _parse_datetime(brief.get("modified_at", ""))
+    reference_dt = snapshot_dt or run_dt or brief_dt
+    age_hours = _hours_since(reference_dt)
+
+    if snapshot_exists:
+        source = "structured_snapshot"
+    elif run_summary_exists or brief_exists:
+        source = "fallback_files"
+    else:
+        source = "missing"
+
+    if source == "missing":
+        label = "Missing"
+        tone = "red"
+        message = "No structured snapshot or fallback files are available for this dashboard state."
+    elif source == "fallback_files":
+        label = "Partial"
+        tone = "warn"
+        message = "Structured snapshot missing — dashboard is reconstructing what it can from fallback files."
+    elif not (snapshot.get("plan") or snapshot.get("curated_stories")):
+        label = "Partial"
+        tone = "warn"
+        message = "Structured snapshot exists but key planning/story data is missing."
+    elif age_hours is None:
+        label = "Partial"
+        tone = "warn"
+        message = "Structured snapshot exists but timestamp metadata is unavailable."
+    elif age_hours <= 30:
+        label = "Fresh"
+        tone = "ok"
+        message = "Structured snapshot matches the latest successful run closely enough for daily operations."
+    else:
+        label = "Stale"
+        tone = "warn" if age_hours <= 72 else "red"
+        message = "Latest structured data is older than a normal daily cycle. Confirm the latest run before acting."
+
+    return {
+        "label": label,
+        "tone": tone,
+        "source": source,
+        "message": message,
+        "age_hours": age_hours,
+        "snapshot_timestamp": snapshot.get("timestamp", ""),
+        "run_timestamp": run_summary.get("ended_at", ""),
+        "brief_timestamp": brief.get("modified_at", ""),
+    }
+
+
 def _normalize_output(output) -> dict:
     if not isinstance(output, dict):
         return {}
@@ -200,6 +379,7 @@ def _normalize_output(output) -> dict:
     normalized["image_prompt"] = normalized.get("image_prompt", "") or ""
     normalized["voice_script"] = normalized.get("voice_script", "") or ""
     normalized["qa"] = normalized.get("qa", "") or ""
+    normalized["agent_metrics"] = _normalize_agent_metrics(normalized.get("agent_metrics", {}))
     normalized["instagram_pack"] = (
         normalized.get("instagram_pack", {})
         if isinstance(normalized.get("instagram_pack"), dict)
@@ -336,8 +516,11 @@ def load_latest_snapshot() -> dict:
     return {
         "exists": DASHBOARD_SNAPSHOT_FILE.exists() and bool(data),
         "path": str(DASHBOARD_SNAPSHOT_FILE),
-        "schema_version": _coerce_int(data.get("schema_version"), 0) if data else 0,
-        "snapshot_kind": data.get("snapshot_kind", "") if data else "",
+        "schema_version": _coerce_int(data.get("schema_version"), 1) if data else 0,
+        "snapshot_kind": (
+            data.get("snapshot_kind", "")
+            or ("latest_dashboard_snapshot" if data else "")
+        ),
         "timestamp": data.get("timestamp", "") if data else "",
         "run_status": data.get("run_status", "UNKNOWN") if data else "UNKNOWN",
         "curated_stories": normalize_digest(data.get("curated_stories", [])) if data else [],
@@ -388,6 +571,7 @@ def load_latest_brief() -> dict:
         "exists": path.exists(),
         "content": content,
         "folder": str(path.parent),
+        "modified_at": _safe_mtime_iso(path),
     }
 
 
@@ -621,6 +805,7 @@ def build_dashboard_context() -> dict:
     instagram = load_instagram_digest_data(snapshot=snapshot, overrides=overrides)
     channels = load_other_channel_data(snapshot=snapshot)
     story_sets = load_available_story_sets(snapshot=snapshot)
+    freshness = _build_freshness_status(snapshot, run_summary, brief)
 
     useful_agent_outputs = [
         output for output in (snapshot.get("agent_outputs", []) or [])
@@ -633,6 +818,11 @@ def build_dashboard_context() -> dict:
         ]
         if _has_useful_output(output)
     ]
+    agent_runtime = _aggregate_agent_metrics([
+        *(snapshot.get("agent_outputs", []) or []),
+        instagram.get("morning_output", {}),
+        instagram.get("afternoon_output", {}),
+    ])
 
     return {
         "status": {
@@ -641,6 +831,8 @@ def build_dashboard_context() -> dict:
             "articles_scanned": run_summary.get("articles_scanned", 0),
             "articles_selected": run_summary.get("articles_selected", len(snapshot.get("curated_stories", []))),
             "snapshot_exists": snapshot.get("exists", False),
+            "freshness": freshness.get("label", "Missing"),
+            "data_source": freshness.get("source", "missing"),
         },
         "brief": brief,
         "overrides": overrides,
@@ -648,6 +840,8 @@ def build_dashboard_context() -> dict:
         "channels": channels,
         "cards": cards,
         "paths": runtime.get("paths", {}),
+        "freshness": freshness,
+        "agent_runtime": agent_runtime,
         "selected_stories": normalize_digest(snapshot.get("curated_stories", [])),
         # Backward-compatible keys used by the current Streamlit app.
         "snapshot": snapshot,

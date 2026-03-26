@@ -11,6 +11,7 @@ Sistema automático que todas as manhãs te entrega um ficheiro no Desktop com a
 - Gera 6 blocos operacionais para redes sociais no brief final
 - Instagram funciona como 2 carrosséis editoriais por dia: manhã (sim racing / nostalgia / racing games / PT) e tarde (motorsport)
 - Se os agentes MiniMax estiverem configurados, acrescenta packs estruturados, prompt de imagem, script de voz e QA ao brief
+- As chamadas dos agentes usam timeout explícito e logs de duração por etapa para reduzir stalls silenciosos
 - Pode enviar um email digest mobile-friendly com a seleção final resolvida
 
 ---
@@ -234,13 +235,9 @@ Instagram:
 - cada digest usa `0` principal, `1` alternativa 1, `2` alternativa 2
 - estrutura atual: 5 a 7 histórias por carrossel
 
-Também existe o ficheiro:
-
-`abrir_overrides_json.bat`
-
-Ao fazer duplo clique:
-- cria o `manual_overrides.json` se ainda não existir
-- abre o JSON para edição rápida no Windows
+Método recomendado:
+- editar directamente `data/manual_overrides.json`
+- manter o ficheiro ausente quando quiseres usar sempre as escolhas principais
 
 Compatibilidade:
 - os overrides antigos continuam suportados quando fizer sentido
@@ -324,6 +321,8 @@ O dashboard serve para:
 - controlar Morning/AFternoon Instagram digests
 - rever prompts, image prompts, voice scripts, QA, cards e brief
 - editar e guardar overrides
+- ver imediatamente se o estado está Fresh / Stale / Partial / Missing
+- copiar hooks, prompts, scripts e links com blocos copy-ready junto ao conteúdo relevante
 
 Foi desenhado como um painel interno limpo e rápido para o fluxo diário:
 - links directos para fontes
@@ -341,3 +340,23 @@ Se o snapshot não existir, cai em fallback gracioso com base no:
 
 Não substitui o pipeline CLI.
 É uma camada operacional por cima do sistema actual.
+
+## Testes automatizados
+
+Existem testes executáveis para módulos críticos em:
+
+`tests/`
+
+Cobertura actual:
+- `planner.py`
+- `manual_overrides.py`
+- `agents.py`
+- `formatter.py`
+- `dashboard_data.py`
+- `email_digest.py`
+
+Execução rápida:
+
+```bash
+python -m unittest discover -s tests -v
+```

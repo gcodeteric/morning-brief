@@ -14,6 +14,7 @@ from dashboard_components import (
     render_copy_buffer,
     render_empty_state,
     render_link_action,
+    render_notice,
     render_page_header,
     render_path_block,
     render_prompt_block,
@@ -119,10 +120,35 @@ def _open_path_feedback(path_like):
         st.warning(message)
 
 
-def _copy_button(label: str, text: str, key: str, primary: bool = False):
+def _copy_button(label: str, text: str, key: str, primary: bool = False, slot_key: str | None = None):
     if st.button(label, key=key, use_container_width=True, type="primary" if primary else "secondary"):
-        set_copy_buffer(text, label)
-        st.toast("Conteúdo preparado para copiar")
+        slot = slot_key or key
+        set_copy_buffer(text, label, slot)
+        st.toast(f"{label} pronto para copiar")
+
+
+def _render_freshness_notice(context: dict):
+    freshness = _safe_dict(context.get("freshness", {}))
+    if not freshness:
+        return
+
+    age_hours = freshness.get("age_hours")
+    age_text = (
+        f"Última actualização há {age_hours}h."
+        if isinstance(age_hours, (int, float))
+        else "Timestamp de actualização indisponível."
+    )
+    source_label = {
+        "structured_snapshot": "snapshot estruturado",
+        "fallback_files": "fallback de ficheiros",
+        "missing": "dados em falta",
+    }.get(freshness.get("source", ""), freshness.get("source", "origem desconhecida"))
+
+    render_notice(
+        f"Dashboard state — {freshness.get('label', 'Unknown')}",
+        f"{freshness.get('message', '')} Fonte actual: {source_label}. {age_text}".strip(),
+        freshness.get("tone", "muted"),
+    )
 
 
 def _render_story_summary(article: dict, show_inline_link: bool = True):
@@ -150,12 +176,13 @@ def _render_story_summary(article: dict, show_inline_link: bool = True):
 def _render_story_actions(article: dict, key_prefix: str, allow_digest_actions: bool = False):
     article = article or {}
     url = article.get("link", "")
+    copy_slot = f"{key_prefix}_copy_slot"
 
     primary = st.columns(3)
     with primary[0]:
         render_link_action(url, "Open Source", f"{key_prefix}_open")
     with primary[1]:
-        _copy_button("Copy Link", url, f"{key_prefix}_copy")
+        _copy_button("Copy Link", url, f"{key_prefix}_copy", slot_key=copy_slot)
     with primary[2]:
         if st.button("Preview in Brief", key=f"{key_prefix}_brief", use_container_width=True):
             st.session_state["dashboard_preview_article"] = article.get("title", "")
@@ -170,6 +197,8 @@ def _render_story_actions(article: dict, key_prefix: str, allow_digest_actions: 
             if st.button("Add to Afternoon", key=f"{key_prefix}_add_afternoon", use_container_width=True):
                 _add_story_to_digest("instagram_afternoon_digest", article)
                 st.toast("Adicionado ao draft da tarde")
+
+    render_copy_buffer(copy_slot)
 
 
 def _render_preview_snippet():
@@ -264,7 +293,14 @@ def _render_qa_block(qa_raw, key_prefix: str):
     if qa.get("issues"):
         st.warning(" | ".join(str(issue) for issue in qa.get("issues", [])))
     if qa.get("hashtags"):
-        _copy_button("Copy Hashtags", " ".join(str(x) for x in qa.get("hashtags", [])), f"{key_prefix}_hashtags")
+        slot = f"{key_prefix}_hashtags_slot"
+        _copy_button(
+            "Copy Hashtags",
+            " ".join(str(x) for x in qa.get("hashtags", [])),
+            f"{key_prefix}_hashtags",
+            slot_key=slot,
+        )
+        render_copy_buffer(slot)
 
 
 def _render_digest_pack(pack: dict, key_prefix: str):
@@ -272,6 +308,7 @@ def _render_digest_pack(pack: dict, key_prefix: str):
     if not pack:
         render_empty_state("Agent output missing", "O latest run não tem um digest pack estruturado para este bloco. O dashboard está em fallback seguro.")
         return
+    copy_slot = f"{key_prefix}_copy_slot"
 
     top_cols = st.columns([1.3, 1, 1])
     with top_cols[0]:
@@ -286,11 +323,13 @@ def _render_digest_pack(pack: dict, key_prefix: str):
 
     button_row = st.columns(3)
     with button_row[0]:
-        _copy_button("Copy Cover Hook", pack.get("cover_hook", ""), f"{key_prefix}_hook")
+        _copy_button("Copy Cover Hook", pack.get("cover_hook", ""), f"{key_prefix}_hook", slot_key=copy_slot)
     with button_row[1]:
-        _copy_button("Copy Caption Intro", pack.get("caption_intro", ""), f"{key_prefix}_caption_intro")
+        _copy_button("Copy Caption Intro", pack.get("caption_intro", ""), f"{key_prefix}_caption_intro", slot_key=copy_slot)
     with button_row[2]:
-        _copy_button("Copy Community Question", pack.get("community_question", ""), f"{key_prefix}_question")
+        _copy_button("Copy Community Question", pack.get("community_question", ""), f"{key_prefix}_question", slot_key=copy_slot)
+
+    render_copy_buffer(copy_slot)
 
     slides = _safe_list(pack.get("slides", []))
     if slides:
@@ -325,15 +364,42 @@ def _render_sidebar(context: dict):
     runtime = context.get("runtime", {}) or {}
     snapshot = context.get("snapshot", {}) or {}
     status = context.get("status", {}) or {}
+    freshness = context.get("freshness", {}) or {}
+
+    def _sidebar_pill(label: str, tone: str = "muted"):
+        tone_map = {
+            "ok": "pill-ok",
+            "warn": "pill-warn",
+            "red": "pill-red",
+            "muted": "pill-muted",
+            "info": "pill-info",
+        }
+        css_class = tone_map.get(tone, "pill-muted")
+        st.sidebar.markdown(
+            f'<span class="dashboard-pill {css_class}">{label}</span>',
+            unsafe_allow_html=True,
+        )
 
     st.sidebar.title("Simula Operations")
     st.sidebar.caption("Internal content control center")
-    render_status_pill(
+    _sidebar_pill(
         f"Run {run_summary.get('status', snapshot.get('run_status', 'UNKNOWN'))}",
         "ok" if run_summary.get("status", snapshot.get("run_status", "UNKNOWN")) == "OK" else "warn",
     )
+    if freshness.get("label"):
+        _sidebar_pill(
+            f"{freshness.get('label')} data",
+            freshness.get("tone", "muted"),
+        )
     if status.get("timestamp"):
         st.sidebar.caption(status.get("timestamp"))
+    if freshness.get("source"):
+        source_label = {
+            "structured_snapshot": "Snapshot",
+            "fallback_files": "Fallback",
+            "missing": "Missing",
+        }.get(freshness.get("source", ""), freshness.get("source", "Unknown"))
+        st.sidebar.caption(f"Source: {source_label}")
 
     metrics_top = st.sidebar.columns(2)
     metrics_top[0].metric("Scanned", run_summary.get("articles_scanned", 0))
@@ -367,10 +433,10 @@ def _render_sidebar(context: dict):
 
     st.sidebar.markdown("---")
     st.sidebar.caption("Operational signals")
-    render_status_pill("MiniMax ready" if runtime.get("minimax_configured") else "MiniMax missing", "ok" if runtime.get("minimax_configured") else "warn")
-    render_status_pill("Email on" if runtime.get("email_enabled") else "Email off", "ok" if runtime.get("email_enabled") else "muted")
-    render_status_pill("Cards on" if runtime.get("card_generation_enabled") else "Cards off", "ok" if runtime.get("card_generation_enabled") else "muted")
-    render_status_pill("Snapshot ready" if runtime.get("snapshot_exists") else "No snapshot", "ok" if runtime.get("snapshot_exists") else "warn")
+    _sidebar_pill("MiniMax ready" if runtime.get("minimax_configured") else "MiniMax missing", "ok" if runtime.get("minimax_configured") else "warn")
+    _sidebar_pill("Email on" if runtime.get("email_enabled") else "Email off", "ok" if runtime.get("email_enabled") else "muted")
+    _sidebar_pill("Cards on" if runtime.get("card_generation_enabled") else "Cards off", "ok" if runtime.get("card_generation_enabled") else "muted")
+    _sidebar_pill("Snapshot ready" if runtime.get("snapshot_exists") else "No snapshot", "ok" if runtime.get("snapshot_exists") else "warn")
 
 
 def _render_overview(context: dict):
@@ -379,11 +445,15 @@ def _render_overview(context: dict):
     run_summary = context.get("run_summary", {}) or {}
     runtime = context.get("runtime", {}) or {}
     overrides = context.get("overrides", {}) or {}
+    freshness = context.get("freshness", {}) or {}
+    agent_runtime = context.get("agent_runtime", {}) or {}
 
     render_page_header(
         "Overview",
         "Latest run health, editorial status and the fastest route into today’s decisions.",
     )
+
+    _render_freshness_notice(context)
 
     if not snapshot.get("exists"):
         render_empty_state(
@@ -407,18 +477,31 @@ def _render_overview(context: dict):
             _open_path_feedback(runtime.get("paths", {}).get("cards_folder", ""))
 
     render_section_header("Run Status", "Operational health and core output availability.")
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Run status", run_summary.get("status", snapshot.get("run_status", "UNKNOWN")))
     c2.metric("Scanned", run_summary.get("articles_scanned", 0))
     c3.metric("Curated", snapshot.get("total_after_dedup", run_summary.get("articles_after_dedup", 0)))
     c4.metric("Selected", run_summary.get("articles_selected", len(snapshot.get("curated_stories", []))))
+    c5.metric("Freshness", freshness.get("label", "Unknown"))
 
     render_section_header("Operational Health", "What is ready, what is active, and what still depends on fallback.")
-    health = st.columns(4)
+    health = st.columns(5)
     health[0].metric("Overrides active", "Yes" if bool(overrides) else "No")
     health[1].metric("Agents useful", "Yes" if context.get("agents_useful") else "No")
     health[2].metric("Cards available", "Yes" if runtime.get("cards_exist") else "No")
     health[3].metric("Email enabled", "Yes" if runtime.get("email_enabled") else "No")
+    health[4].metric("Data source", {
+        "structured_snapshot": "Snapshot",
+        "fallback_files": "Fallback",
+        "missing": "Missing",
+    }.get(freshness.get("source", ""), "Unknown"))
+
+    render_section_header("Agent Runtime", "Visibility into agent latency, fallbacks and useful output count.")
+    runtime_cols = st.columns(4)
+    runtime_cols[0].metric("Pipelines", agent_runtime.get("pipelines", 0))
+    runtime_cols[1].metric("Calls OK", agent_runtime.get("calls_succeeded", 0))
+    runtime_cols[2].metric("Timeouts / Fail", f"{agent_runtime.get('calls_timed_out', 0)} / {agent_runtime.get('calls_failed', 0)}")
+    runtime_cols[3].metric("Useful outputs", agent_runtime.get("useful_outputs", 0))
 
     render_section_header("Instagram Today", "Morning and afternoon editorial digest blocks at a glance.")
     d1, d2 = st.columns(2)
@@ -469,6 +552,7 @@ def _render_news_browser(context: dict):
         "News Browser",
         "Filter curated stories, open direct sources and push promising items into working digest drafts.",
     )
+    _render_freshness_notice(context)
 
     top_actions = st.columns(3)
     with top_actions[0]:
@@ -563,7 +647,7 @@ def _render_digest_story_draft(channel: str, stories: list[dict]):
             with first_row[0]:
                 render_link_action(article.get("link", ""), "Open Source", f"{channel}_{idx}_open")
             with first_row[1]:
-                _copy_button("Copy Link", article.get("link", ""), f"{channel}_{idx}_copy")
+                _copy_button("Copy Link", article.get("link", ""), f"{channel}_{idx}_copy", slot_key=f"{channel}_{idx}_copy_slot")
             with first_row[2]:
                 if st.button("Remove", key=f"{channel}_{idx}_remove", use_container_width=True):
                     _remove_story_from_digest(channel, idx)
@@ -578,6 +662,7 @@ def _render_digest_story_draft(channel: str, stories: list[dict]):
                 if st.button("Move Down", key=f"{channel}_{idx}_down", use_container_width=True, disabled=idx == len(stories) - 1):
                     _move_story(channel, idx, 1)
                     st.rerun()
+            render_copy_buffer(f"{channel}_{idx}_copy_slot")
 
 
 def _render_digest_assets(channel: str, label: str, output: dict, pack: dict, card_lookup: dict, stories: list[dict], accent: str):
@@ -596,7 +681,8 @@ def _render_digest_assets(channel: str, label: str, output: dict, pack: dict, ca
             "The latest run did not persist an image prompt for this digest.",
             accent=accent,
         )
-        _copy_button("Copy Image Prompt", output.get("image_prompt", ""), f"{channel}_copy_image")
+        _copy_button("Copy Image Prompt", output.get("image_prompt", ""), f"{channel}_copy_image", slot_key=f"{channel}_image_slot")
+        render_copy_buffer(f"{channel}_image_slot")
 
     with tabs[2]:
         render_prompt_block(
@@ -605,7 +691,8 @@ def _render_digest_assets(channel: str, label: str, output: dict, pack: dict, ca
             "The latest run did not persist a voice script for this digest.",
             accent=accent,
         )
-        _copy_button("Copy Voice Script", output.get("voice_script", ""), f"{channel}_copy_voice")
+        _copy_button("Copy Voice Script", output.get("voice_script", ""), f"{channel}_copy_voice", slot_key=f"{channel}_voice_slot")
+        render_copy_buffer(f"{channel}_voice_slot")
 
     with tabs[3]:
         with card_container():
@@ -622,7 +709,8 @@ def _render_digest_assets(channel: str, label: str, output: dict, pack: dict, ca
                     if st.button("Open Card Folder", key=f"{channel}_open_cards", use_container_width=True):
                         _open_path_feedback(Path(card_path).parent)
                 with actions[1]:
-                    _copy_button("Copy Card Path", card_path, f"{channel}_copy_card_path")
+                    _copy_button("Copy Card Path", card_path, f"{channel}_copy_card_path", slot_key=f"{channel}_card_slot")
+                render_copy_buffer(f"{channel}_card_slot")
             else:
                 render_empty_state("No card available", "This digest does not currently have a generated card in the latest run.")
 
@@ -645,12 +733,13 @@ def _render_digest_editor(channel: str, label: str, output: dict, pack: dict, ca
         if st.button("Save as Active", key=f"{channel}_save_active", use_container_width=True, type="primary"):
             _save_overrides_feedback()
     with action_row[1]:
-        _copy_button("Copy Full Digest Text", _format_digest_copy_text(pack, stories), f"{channel}_copy_full")
+        _copy_button("Copy Full Digest Text", _format_digest_copy_text(pack, stories), f"{channel}_copy_full", slot_key=f"{channel}_actions_slot")
     with action_row[2]:
-        _copy_button("Copy Community Question", _safe_dict(pack).get("community_question", ""), f"{channel}_copy_question")
+        _copy_button("Copy Community Question", _safe_dict(pack).get("community_question", ""), f"{channel}_copy_question", slot_key=f"{channel}_actions_slot")
     with action_row[3]:
         if st.button("Open Overrides Page", key=f"{channel}_open_overrides", use_container_width=True):
             _set_navigation("Overrides")
+    render_copy_buffer(f"{channel}_actions_slot")
 
     _render_digest_variant_cards(channel, plan, accent)
 
@@ -667,6 +756,7 @@ def _render_instagram(context: dict):
         "Instagram",
         "Morning and afternoon digests, structured packs, prompts, QA and cards in one operational workspace.",
     )
+    _render_freshness_notice(context)
     snapshot = context.get("snapshot", {}) or {}
     plan = _safe_dict(snapshot.get("plan", {}))
 
@@ -715,7 +805,9 @@ def _render_channel_output_block(output: dict, copy_key: str, empty_text: str):
         with card_container():
             st.markdown("**Generated Output**")
             st.code(output.get("post", ""), language="text")
-            _copy_button("Copy Output", output.get("post", ""), f"{copy_key}_output")
+            slot = f"{copy_key}_output_slot"
+            _copy_button("Copy Output", output.get("post", ""), f"{copy_key}_output", slot_key=slot)
+            render_copy_buffer(slot)
     else:
         render_empty_state("No generated output", empty_text)
 
@@ -725,6 +817,7 @@ def _render_other_channels(context: dict):
         "Other Channels",
         "Keep X, YouTube, Reddit and Discord visible without overloading the workspace.",
     )
+    _render_freshness_notice(context)
     snapshot = context.get("snapshot", {}) or {}
     plan = _safe_dict(snapshot.get("plan", {}))
     agent_outputs = _safe_list(snapshot.get("agent_outputs", []))
@@ -757,7 +850,8 @@ def _render_other_channels(context: dict):
                 if output.get("voice_script"):
                     with st.expander("Voice Script", expanded=False):
                         st.code(output.get("voice_script", ""), language="text")
-                        _copy_button("Copy Voice Script", output.get("voice_script", ""), "yt_voice_copy")
+                        _copy_button("Copy Voice Script", output.get("voice_script", ""), "yt_voice_copy", slot_key="yt_voice_slot")
+                        render_copy_buffer("yt_voice_slot")
             else:
                 render_empty_state("No YouTube story selected", "This channel has no active daily pick in the latest run.")
 
@@ -790,6 +884,7 @@ def _render_image_voice(context: dict):
         "Image + Voice",
         "Use this page as a production prep workspace for prompts, scripts and the stories behind them.",
     )
+    _render_freshness_notice(context)
     snapshot = context.get("snapshot", {}) or {}
     plan = _safe_dict(snapshot.get("plan", {}))
     agent_outputs = _safe_list(snapshot.get("agent_outputs", []))
@@ -812,7 +907,8 @@ def _render_image_voice(context: dict):
                         with story_actions[0]:
                             render_link_action(article.get("link", ""), "Open Source", f"{digest_key}_{idx}_open")
                         with story_actions[1]:
-                            _copy_button("Copy Story Link", article.get("link", ""), f"{digest_key}_{idx}_copy_link")
+                            _copy_button("Copy Story Link", article.get("link", ""), f"{digest_key}_{idx}_copy_link", slot_key=f"{digest_key}_{idx}_story_slot")
+                        render_copy_buffer(f"{digest_key}_{idx}_story_slot")
                 else:
                     render_empty_state("No stories available", "This digest has no persisted stories in the latest run.")
         with cols[1]:
@@ -822,14 +918,16 @@ def _render_image_voice(context: dict):
                 "No image prompt is available for this digest.",
                 accent=accent,
             )
-            _copy_button("Copy Image Prompt", output.get("image_prompt", ""), f"{digest_key}_img_copy")
+            _copy_button("Copy Image Prompt", output.get("image_prompt", ""), f"{digest_key}_img_copy", slot_key=f"{digest_key}_image_slot")
+            render_copy_buffer(f"{digest_key}_image_slot")
             render_prompt_block(
                 "Voice Script",
                 output.get("voice_script", ""),
                 "No voice script is available for this digest.",
                 accent=accent,
             )
-            _copy_button("Copy Voice Script", output.get("voice_script", ""), f"{digest_key}_voice_copy")
+            _copy_button("Copy Voice Script", output.get("voice_script", ""), f"{digest_key}_voice_copy", slot_key=f"{digest_key}_voice_slot")
+            render_copy_buffer(f"{digest_key}_voice_slot")
 
     with insta_tabs[0]:
         render_digest_media("Morning Digest", "instagram_morning_digest", "instagram_morning_output", "morning")
@@ -845,8 +943,11 @@ def _render_image_voice(context: dict):
                 _render_story_summary(article)
                 if output.get("image_prompt"):
                     st.code(output.get("image_prompt", ""), language="text")
+                    _copy_button("Copy Image Prompt", output.get("image_prompt", ""), f"top_agent_image_{idx}", slot_key=f"top_agent_{idx}_slot")
                 if output.get("voice_script"):
                     st.code(output.get("voice_script", ""), language="text")
+                    _copy_button("Copy Voice Script", output.get("voice_script", ""), f"top_agent_voice_{idx}", slot_key=f"top_agent_{idx}_slot")
+                render_copy_buffer(f"top_agent_{idx}_slot")
 
 
 def _render_brief_page(context: dict):
@@ -855,6 +956,7 @@ def _render_brief_page(context: dict):
         "Brief",
         "Use the latest brief as a working artifact, with quick access to the file, folder and raw markdown.",
     )
+    _render_freshness_notice(context)
     if not brief.get("exists"):
         render_empty_state("Brief not available", "The latest brief file does not exist yet for this environment or run state.")
         return
@@ -897,6 +999,7 @@ def _render_overrides_page(context: dict):
         "Overrides",
         "Guided override controls for digest and channel variants, with a preview before you save.",
     )
+    _render_freshness_notice(context)
 
     if not plan:
         render_empty_state("Plan not available", "Override preview is limited until a normal run persists a structured plan into the latest snapshot.")
@@ -974,6 +1077,7 @@ def _render_settings_status(context: dict):
         "Settings / Status",
         "Operational diagnostics for feature availability, required assets and file paths.",
     )
+    _render_freshness_notice(context)
 
     cols = st.columns(4)
     cols[0].metric("MiniMax", "Configured" if runtime.get("minimax_configured") else "Missing")
@@ -1021,7 +1125,6 @@ def main():
     context = load_dashboard_context()
     _init_state(context)
     _render_sidebar(context)
-    render_copy_buffer()
 
     nav = st.session_state.get("dashboard_nav", "Overview")
     if nav == "Overview":

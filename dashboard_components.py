@@ -135,6 +135,38 @@ def inject_custom_css():
             display: block;
             line-height: 1.45;
         }
+        .dashboard-notice {
+            border-radius: 18px;
+            padding: 16px 18px;
+            margin-bottom: 14px;
+            border: 1px solid #e4e7ec;
+            background: #ffffff;
+            box-shadow: 0 10px 24px rgba(18, 24, 40, 0.04);
+        }
+        .notice-ok { border-left: 5px solid #027a48; }
+        .notice-warn { border-left: 5px solid #b54708; }
+        .notice-red { border-left: 5px solid #b42318; }
+        .notice-muted { border-left: 5px solid #98a2b3; }
+        .dashboard-copy-ready {
+            background: #fffaf5;
+            border: 1px solid #f5d0ab;
+            border-left: 5px solid #b54708;
+            border-radius: 16px;
+            padding: 14px 16px 8px 16px;
+            margin-top: 10px;
+            margin-bottom: 12px;
+        }
+        .dashboard-copy-ready strong {
+            color: #7a2e0b;
+            display: block;
+            margin-bottom: 4px;
+        }
+        .dashboard-copy-ready span {
+            color: #8a4b1d;
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.92rem;
+        }
         .dashboard-pathbox {
             background: #f8fafc;
             border: 1px solid #e4e7ec;
@@ -253,6 +285,25 @@ def render_empty_state(title: str, message: str):
     )
 
 
+def render_notice(title: str, message: str, tone: str = "muted"):
+    tone_map = {
+        "ok": "notice-ok",
+        "warn": "notice-warn",
+        "red": "notice-red",
+        "muted": "notice-muted",
+    }
+    css_class = tone_map.get(tone, "notice-muted")
+    st.markdown(
+        (
+            f'<div class="dashboard-notice {css_class}">'
+            f"<strong>{title}</strong>"
+            f"<div>{message}</div>"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
 def render_prompt_block(title: str, text: str, empty_message: str, accent: str | None = None):
     with card_container(accent=accent, soft=True):
         st.markdown(f"**{title}**")
@@ -275,24 +326,37 @@ def render_path_block(label: str, path_value: str):
     )
 
 
-def set_copy_buffer(text: str, label: str = ""):
+def set_copy_buffer(text: str, label: str = "", slot_key: str = "global"):
     st.session_state["dashboard_copy_buffer_text"] = text or ""
     st.session_state["dashboard_copy_buffer_label"] = label or "Copy-ready text"
+    st.session_state["dashboard_copy_buffer_slot"] = slot_key or "global"
 
 
-def render_copy_buffer():
+def render_copy_buffer(slot_key: str | None = None):
     text = st.session_state.get("dashboard_copy_buffer_text", "")
     if not text:
         return
+    current_slot = st.session_state.get("dashboard_copy_buffer_slot", "global")
+    if slot_key is not None and current_slot != slot_key:
+        return
     label = st.session_state.get("dashboard_copy_buffer_label", "Copy-ready text")
-    with st.expander("Copy helper", expanded=False):
-        st.caption(f"{label} — usa esta caixa como fallback de copy.")
-        st.text_area(
-            "Copy-ready",
-            value=text,
-            height=min(max(120, len(text) // 2), 320),
-            key="dashboard_copy_buffer_area",
-        )
+    area_key = f"dashboard_copy_buffer_area_{slot_key or current_slot}"
+    st.markdown(
+        (
+            '<div class="dashboard-copy-ready">'
+            f"<strong>Ready to copy — {label}</strong>"
+            "<span>Selecciona e copia directamente desta caixa.</span>"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+    st.text_area(
+        "Copy-ready",
+        value=text,
+        height=min(max(120, len(text) // 2), 320),
+        key=area_key,
+        label_visibility="collapsed",
+    )
 
 
 def open_local_path(path_like) -> tuple[bool, str]:

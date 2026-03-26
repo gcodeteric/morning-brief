@@ -7,6 +7,7 @@ Sistema híbrido: corre em paralelo com o formatter existente.
 import json
 import logging
 import os
+from time import perf_counter
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
@@ -14,8 +15,16 @@ logger = logging.getLogger(__name__)
 MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "").strip()
 MINIMAX_BASE_URL = "https://api.minimax.io/v1"
 MODEL = "MiniMax-M2.7"
+AGENT_TIMEOUT_SECONDS = float(os.environ.get("MINIMAX_TIMEOUT_SECONDS", "45"))
 
-client = OpenAI(api_key=MINIMAX_API_KEY, base_url=MINIMAX_BASE_URL) if MINIMAX_API_KEY else None
+client = (
+    OpenAI(
+        api_key=MINIMAX_API_KEY,
+        base_url=MINIMAX_BASE_URL,
+        timeout=AGENT_TIMEOUT_SECONDS,
+    )
+    if MINIMAX_API_KEY else None
+)
 
 AGENT_PROMPTS = {
 
@@ -300,6 +309,57 @@ def _clean_output(text: str) -> str:
     return text.strip()
 
 
+def _new_agent_metrics(scope: str) -> dict:
+    return {
+        "scope": scope,
+        "timeout_seconds": AGENT_TIMEOUT_SECONDS,
+        "calls_attempted": 0,
+        "calls_succeeded": 0,
+        "calls_failed": 0,
+        "calls_timed_out": 0,
+        "calls_skipped": 0,
+        "durations": {},
+        "parse_failures": [],
+        "total_duration_sec": 0.0,
+        "useful_output": False,
+    }
+
+
+def _record_duration(metrics: dict | None, agent_name: str, duration: float) -> None:
+    if metrics is None:
+        return
+    metrics.setdefault("durations", {})[agent_name] = round(duration, 3)
+
+
+def _record_parse_failure(metrics: dict | None, stage: str, error: Exception | str) -> None:
+    if metrics is None:
+        return
+    metrics.setdefault("parse_failures", []).append({
+        "stage": stage,
+        "error": str(error)[:160],
+    })
+
+
+def _is_timeout_error(error: Exception) -> bool:
+    error_name = type(error).__name__.lower()
+    error_text = str(error).lower()
+    return "timeout" in error_name or "timed out" in error_text or "deadline" in error_text
+
+
+def _parse_agent_json(raw_text: str, label: str, metrics: dict | None = None) -> dict | None:
+    if not raw_text:
+        return None
+    try:
+        parsed = json.loads(raw_text)
+        if not isinstance(parsed, dict):
+            raise ValueError(f"esperado objecto JSON, veio {type(parsed).__name__}")
+        return parsed
+    except Exception as e:
+        logger.warning("%s JSON inválido — fallback usado: %s", label, e)
+        _record_parse_failure(metrics, label, e)
+        return None
+
+
 def _compose_instagram_post(instagram_pack: dict) -> str:
     """Converte o pack estruturado do Copywriter em texto legível para o brief."""
     if not isinstance(instagram_pack, dict) or not instagram_pack:
@@ -403,10 +463,19 @@ def _build_digest_summary(digest_articles, digest_type):
     return "\n".join(lines).strip()
 
 
-def run_agent(agent_name: str, user_input: str, context: str = "") -> str:
+def run_agent(agent_name: str, user_input: str, context: str = "", metrics: dict | None = None) -> str:
+    started_at = perf_counter()
+    if metrics is not None:
+        metrics["calls_attempted"] = metrics.get("calls_attempted", 0) + 1
+    logger.info("Agent start: %s", agent_name)
+
     # Proteção: key não configurada → não faz chamada, não rebenta dry-run
     if not MINIMAX_API_KEY or "COLOCA_AQUI" in MINIMAX_API_KEY or client is None:
-        logger.warning("MiniMax API key não configurada — agente ignorado")
+        duration = perf_counter() - started_at
+        _record_duration(metrics, agent_name, duration)
+        if metrics is not None:
+            metrics["calls_skipped"] = metrics.get("calls_skipped", 0) + 1
+        logger.warning("Agent skipped: %s — MiniMax API key não configurada", agent_name)
         return ""
 
     messages = []
@@ -423,16 +492,38 @@ def run_agent(agent_name: str, user_input: str, context: str = "") -> str:
                 *messages
             ],
             max_tokens=1500,
-            temperature=0.75
+            temperature=0.75,
+            timeout=AGENT_TIMEOUT_SECONDS,
         )
-        return _clean_output(response.choices[0].message.content or "")
+        cleaned = _clean_output(response.choices[0].message.content or "")
+        duration = perf_counter() - started_at
+        _record_duration(metrics, agent_name, duration)
+        if metrics is not None:
+            metrics["calls_succeeded"] = metrics.get("calls_succeeded", 0) + 1
+        logger.info("Agent done: %s in %.2fs (%d chars)", agent_name, duration, len(cleaned))
+        return cleaned
     except Exception as e:
-        logger.warning(f"Agente {agent_name} falhou: {e}")
+        duration = perf_counter() - started_at
+        _record_duration(metrics, agent_name, duration)
+        if metrics is not None:
+            if _is_timeout_error(e):
+                metrics["calls_timed_out"] = metrics.get("calls_timed_out", 0) + 1
+            else:
+                metrics["calls_failed"] = metrics.get("calls_failed", 0) + 1
+        if _is_timeout_error(e):
+            logger.warning(
+                "Agent timeout: %s after %.2fs (budget %.1fs): %s",
+                agent_name, duration, AGENT_TIMEOUT_SECONDS, e,
+            )
+        else:
+            logger.warning("Agent fail: %s after %.2fs: %s", agent_name, duration, e)
         return ""
 
 
 def run_full_pipeline(article: dict) -> dict:
     """Corre os 5 agentes em cadeia. Retorna dict com todos os outputs."""
+    pipeline_started_at = perf_counter()
+    metrics = _new_agent_metrics("single_article")
     summary = (
         f"Título: {article.get('title','')}\n"
         f"Fonte: {article.get('source','')}\n"
@@ -442,33 +533,39 @@ def run_full_pipeline(article: dict) -> dict:
     )
     logger.info(f"Pipeline: '{article.get('title','')[:50]}'")
 
-    analysis = run_agent("analyst", summary)
-    raw_post = run_agent("copywriter", summary, analysis)
+    analysis = run_agent("analyst", summary, metrics=metrics)
+    raw_post = run_agent("copywriter", summary, analysis, metrics=metrics)
 
     instagram_pack = {}
     post = raw_post
-    try:
-        parsed_pack = json.loads(raw_post)
-        if isinstance(parsed_pack, dict):
-            instagram_pack = parsed_pack
-            composed_post = _compose_instagram_post(instagram_pack)
-            if composed_post:
-                post = composed_post
-    except Exception:
-        pass
+    parsed_pack = _parse_agent_json(raw_post, "copywriter", metrics)
+    if parsed_pack:
+        instagram_pack = parsed_pack
+        composed_post = _compose_instagram_post(instagram_pack)
+        if composed_post:
+            post = composed_post
+    elif raw_post:
+        logger.info("Copywriter fallback para texto bruto no pipeline single-article")
 
-    img_prompt = run_agent("image_director", post, analysis)
-    voice = run_agent("voice_director", post)
-    qa_result = run_agent("qa", post)
+    img_prompt = run_agent("image_director", post, analysis, metrics=metrics)
+    voice = run_agent("voice_director", post, metrics=metrics)
+    qa_result = run_agent("qa", post, metrics=metrics)
 
     final_post = post
-    try:
-        qa_data = json.loads(qa_result)
-        if not qa_data.get("approved") and qa_data.get("improved_post"):
-            final_post = qa_data["improved_post"]
-            logger.info("QA rejeitou → usando improved_post")
-    except Exception:
-        pass
+    qa_data = _parse_agent_json(qa_result, "qa", metrics)
+    if qa_data and not qa_data.get("approved") and qa_data.get("improved_post"):
+        improved_post = str(qa_data.get("improved_post") or "")
+        improved_pack = _parse_agent_json(improved_post, "qa.improved_post", metrics)
+        if improved_pack:
+            instagram_pack = improved_pack
+            final_post = _compose_instagram_post(improved_pack) or improved_post
+            logger.info("QA rejeitou → usando improved_post estruturado")
+        else:
+            final_post = improved_post
+            logger.info("QA rejeitou → usando improved_post em texto")
+
+    metrics["total_duration_sec"] = round(perf_counter() - pipeline_started_at, 3)
+    metrics["useful_output"] = bool(any([final_post, instagram_pack, img_prompt, voice]))
 
     return {
         "article": article,
@@ -479,6 +576,7 @@ def run_full_pipeline(article: dict) -> dict:
         "voice_script": voice,
         "qa": qa_result,
         "raw_post": raw_post,
+        "agent_metrics": metrics,
     }
 
 
@@ -496,38 +594,47 @@ def run_instagram_digest_pipeline(digest_articles: list, digest_type: str) -> di
             "voice_script": "",
             "qa": "",
             "raw_post": "",
+            "agent_metrics": _new_agent_metrics("instagram_digest"),
         }
 
+    pipeline_started_at = perf_counter()
+    metrics = _new_agent_metrics("instagram_digest")
     summary = _build_digest_summary(digest_articles, digest_type)
     logger.info(f"Instagram digest pipeline: {digest_type} ({len(digest_articles)} stories)")
 
-    analysis = run_agent("instagram_digest_analyst", summary)
-    raw_post = run_agent("instagram_digest_copywriter", summary, analysis)
+    analysis = run_agent("instagram_digest_analyst", summary, metrics=metrics)
+    raw_post = run_agent("instagram_digest_copywriter", summary, analysis, metrics=metrics)
 
     instagram_pack = {}
     post = raw_post
-    try:
-        parsed_pack = json.loads(raw_post)
-        if isinstance(parsed_pack, dict):
-            instagram_pack = parsed_pack
-            composed_post = _compose_instagram_digest_post(instagram_pack)
-            if composed_post:
-                post = composed_post
-    except Exception:
-        pass
+    parsed_pack = _parse_agent_json(raw_post, "instagram_digest_copywriter", metrics)
+    if parsed_pack:
+        instagram_pack = parsed_pack
+        composed_post = _compose_instagram_digest_post(instagram_pack)
+        if composed_post:
+            post = composed_post
+    elif raw_post:
+        logger.info("Instagram digest copywriter fallback para texto bruto")
 
-    img_prompt = run_agent("image_director", post, analysis)
-    voice = run_agent("voice_director", post)
-    qa_result = run_agent("instagram_digest_qa", post)
+    img_prompt = run_agent("image_director", post, analysis, metrics=metrics)
+    voice = run_agent("voice_director", post, metrics=metrics)
+    qa_result = run_agent("instagram_digest_qa", post, metrics=metrics)
 
     final_post = post
-    try:
-        qa_data = json.loads(qa_result)
-        if not qa_data.get("approved") and qa_data.get("improved_post"):
-            final_post = qa_data["improved_post"]
-            logger.info("Instagram digest QA rejeitou → usando improved_post")
-    except Exception:
-        pass
+    qa_data = _parse_agent_json(qa_result, "instagram_digest_qa", metrics)
+    if qa_data and not qa_data.get("approved") and qa_data.get("improved_post"):
+        improved_post = str(qa_data.get("improved_post") or "")
+        improved_pack = _parse_agent_json(improved_post, "instagram_digest_qa.improved_post", metrics)
+        if improved_pack:
+            instagram_pack = improved_pack
+            final_post = _compose_instagram_digest_post(improved_pack) or improved_post
+            logger.info("Instagram digest QA rejeitou → usando improved_post estruturado")
+        else:
+            final_post = improved_post
+            logger.info("Instagram digest QA rejeitou → usando improved_post em texto")
+
+    metrics["total_duration_sec"] = round(perf_counter() - pipeline_started_at, 3)
+    metrics["useful_output"] = bool(any([final_post, instagram_pack, img_prompt, voice]))
 
     return {
         "digest_type": digest_type,
@@ -539,4 +646,5 @@ def run_instagram_digest_pipeline(digest_articles: list, digest_type: str) -> di
         "voice_script": voice,
         "qa": qa_result,
         "raw_post": raw_post,
+        "agent_metrics": metrics,
     }

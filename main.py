@@ -100,19 +100,45 @@ def _print_run_summary(curated, plan, card_paths, dry_run):
 
         _safe_print("=" * 52)
 
-        ig_sim = "✓" if plan.get("instagram_sim_racing") else "–"
-        ig_moto = "✓" if plan.get("instagram_motorsport") else "–"
+        ig_morning_size = len(plan.get("instagram_morning_digest", []) or [])
+        ig_afternoon_size = len(plan.get("instagram_afternoon_digest", []) or [])
+        ig_morning = ig_morning_size or ("✓" if plan.get("instagram_sim_racing") else "–")
+        ig_afternoon = ig_afternoon_size or ("✓" if plan.get("instagram_motorsport") else "–")
         yt_daily = "✓" if plan.get("youtube_daily") else "–"
         reddit = len(plan.get("reddit_candidates", []))
         discord = "✓" if plan.get("discord_post") else "SILÊNCIO"
         cards = len(card_paths) if card_paths else 0
 
-        _safe_print(f"  IG sim={ig_sim}  IG moto={ig_moto}  "
+        _safe_print(f"  IG manhã={ig_morning}  IG tarde={ig_afternoon}  "
                     f"YT={yt_daily}  Reddit={reddit}  "
                     f"Discord={discord}  Cards={cards}")
         _safe_print("=" * 52 + "\n")
     except Exception:
         pass  # preview nunca pode quebrar o run
+
+
+def _aggregate_agent_metrics(outputs):
+    summary = {
+        "calls_attempted": 0,
+        "calls_succeeded": 0,
+        "calls_failed": 0,
+        "calls_timed_out": 0,
+        "calls_skipped": 0,
+        "total_duration_sec": 0.0,
+        "useful_outputs": 0,
+    }
+    for output in outputs or []:
+        metrics = (output or {}).get("agent_metrics", {}) or {}
+        summary["calls_attempted"] += int(metrics.get("calls_attempted", 0) or 0)
+        summary["calls_succeeded"] += int(metrics.get("calls_succeeded", 0) or 0)
+        summary["calls_failed"] += int(metrics.get("calls_failed", 0) or 0)
+        summary["calls_timed_out"] += int(metrics.get("calls_timed_out", 0) or 0)
+        summary["calls_skipped"] += int(metrics.get("calls_skipped", 0) or 0)
+        summary["total_duration_sec"] += float(metrics.get("total_duration_sec", 0.0) or 0.0)
+        if metrics.get("useful_output"):
+            summary["useful_outputs"] += 1
+    summary["total_duration_sec"] = round(summary["total_duration_sec"], 3)
+    return summary
 
 
 def main(dry_run: bool = False):
@@ -171,6 +197,17 @@ def main(dry_run: bool = False):
                 logging.info(f"   → {useful_outputs} outputs úteis gerados pelo pipeline")
             else:
                 logging.info("   → Agent pipeline terminou sem outputs úteis")
+            agent_summary = _aggregate_agent_metrics(agent_outputs)
+            if agent_summary["calls_attempted"]:
+                logging.info(
+                    "   ↳ Agent calls: attempted=%d | ok=%d | fail=%d | timeout=%d | skipped=%d | total=%.2fs",
+                    agent_summary["calls_attempted"],
+                    agent_summary["calls_succeeded"],
+                    agent_summary["calls_failed"],
+                    agent_summary["calls_timed_out"],
+                    agent_summary["calls_skipped"],
+                    agent_summary["total_duration_sec"],
+                )
         except Exception as e:
             logging.warning(f"Agent pipeline falhou (não crítico): {e}")
         finally:
@@ -205,10 +242,12 @@ def main(dry_run: bool = False):
                     ("instagram_afternoon", "instagram_afternoon_digest", "afternoon_digest"),
                 ]
                 useful_digest_outputs = 0
+                digest_results = []
 
                 for prefix, digest_key, digest_type in digest_jobs:
                     digest_articles = editorial_plan.get(digest_key, []) or []
                     result = run_instagram_digest_pipeline(digest_articles, digest_type)
+                    digest_results.append(result)
                     editorial_plan[f"{prefix}_output"] = result
                     editorial_plan[f"{prefix}_pack"] = result.get("instagram_pack", {})
                     if any([
@@ -223,6 +262,17 @@ def main(dry_run: bool = False):
                     logging.info(f"   → {useful_digest_outputs} digest packs úteis gerados")
                 else:
                     logging.info("   → Instagram digest pipeline terminou sem outputs úteis")
+                digest_summary = _aggregate_agent_metrics(digest_results)
+                if digest_summary["calls_attempted"]:
+                    logging.info(
+                        "   ↳ Digest agent calls: attempted=%d | ok=%d | fail=%d | timeout=%d | skipped=%d | total=%.2fs",
+                        digest_summary["calls_attempted"],
+                        digest_summary["calls_succeeded"],
+                        digest_summary["calls_failed"],
+                        digest_summary["calls_timed_out"],
+                        digest_summary["calls_skipped"],
+                        digest_summary["total_duration_sec"],
+                    )
             except Exception as e:
                 logging.warning(f"Instagram digest pipeline falhou (não crítico): {e}")
 
