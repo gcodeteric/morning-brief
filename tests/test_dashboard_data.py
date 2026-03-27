@@ -251,6 +251,106 @@ class DashboardDataTests(unittest.TestCase):
         email_output = item["platform_outputs"]["email"]
         self.assertIn("https://example.com/main-story", email_output["body"])
 
+    def test_story_workspace_prefers_two_agent_per_story_outputs_when_available(self):
+        story = make_story("Reader Story", "https://example.com/reader-story", score=88)
+        snapshot = {
+            "curated_stories": [story],
+            "rated_story_pool": [story],
+            "plan": {
+                "instagram_morning_digest": [story],
+                "instagram_afternoon_digest": [],
+                "x_thread_1": story,
+            },
+            "agent_outputs": [
+                {
+                    "article": story,
+                    "status": "ok",
+                    "reader_status": "ok",
+                    "copy_status": "ok",
+                    "summary_source": "article_reader",
+                    "article_summary": [
+                        "Linha factual 1",
+                        "Linha factual 2",
+                        "Linha factual 3",
+                    ],
+                    "instagram": {
+                        "image_text": {
+                            "hook": "Gancho leitor",
+                            "line_1": "Imagem 1",
+                            "line_2": "Imagem 2",
+                        },
+                        "caption": {
+                            "title": "Título Instagram",
+                            "body": ["Legenda 1", "Legenda 2", "Legenda 3"],
+                            "link": "https://example.com/reader-story",
+                        },
+                    },
+                    "x": {
+                        "post": [
+                            "Linha X 1",
+                            "Linha X 2",
+                            "https://example.com/reader-story",
+                        ],
+                    },
+                    "youtube": {
+                        "title": "Título YouTube",
+                        "hook": "Hook YouTube",
+                        "description": ["Desc 1", "Desc 2", "Desc 3"],
+                        "voice_script": ["Voz 1", "Voz 2", "Voz 3"],
+                    },
+                    "reddit": {
+                        "title": "Título Reddit",
+                        "body": ["Reddit 1", "Reddit 2", "Reddit 3"],
+                    },
+                    "discord": {
+                        "post": [
+                            "Discord 1",
+                            "Discord 2",
+                            "https://example.com/reader-story",
+                        ],
+                    },
+                    "email": {
+                        "subject": "Assunto Email",
+                        "body": ["Email 1", "Email 2", "Email 3"],
+                        "link": "https://example.com/reader-story",
+                    },
+                }
+            ],
+        }
+
+        items = dashboard_data.build_story_workspace_items(snapshot=snapshot, overrides={})
+
+        self.assertEqual(len(items), 1)
+        item = items[0]
+        self.assertIn("Linha factual 1", item["summary_snippet"])
+
+        instagram = item["platform_outputs"]["instagram"]
+        self.assertEqual(instagram["mode"], "article_reader_copy")
+        self.assertEqual(instagram["image_text"]["hook"], "Gancho leitor")
+        self.assertIn("https://example.com/reader-story", instagram["caption"]["text"])
+
+        x_output = item["platform_outputs"]["x"]
+        self.assertEqual(x_output["mode"], "article_reader_copy")
+        self.assertIn("Linha X 1", x_output["text"])
+
+        youtube = item["platform_outputs"]["youtube"]
+        self.assertEqual(youtube["mode"], "voice_ready")
+        self.assertEqual(youtube["title"], "Título YouTube")
+        self.assertEqual(youtube["voice_script"], "Voz 1\nVoz 2\nVoz 3")
+
+        reddit = item["platform_outputs"]["reddit"]
+        self.assertEqual(reddit["mode"], "article_reader_copy")
+        self.assertIn("Reddit 1", reddit["body"])
+
+        discord = item["platform_outputs"]["discord"]
+        self.assertEqual(discord["mode"], "article_reader_copy")
+        self.assertIn("Discord 1", discord["text"])
+
+        email_output = item["platform_outputs"]["email"]
+        self.assertEqual(email_output["mode"], "article_reader_copy")
+        self.assertEqual(email_output["subject"], "Assunto Email")
+        self.assertIn("Email 1", email_output["body"])
+
     def test_story_workspace_respects_active_digest_variant_and_fallback_outputs(self):
         primary_story = make_story("Primary Story", "https://example.com/primary")
         alt_story = make_story("Alternative Story", "https://example.com/alternative")

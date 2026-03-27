@@ -178,22 +178,25 @@ def main(dry_run: bool = False):
         logging.info("Passo 2.5: Agent pipeline MiniMax M2.7...")
         agent_outputs = []
         try:
-            from agents import run_full_pipeline
-            top3 = curated["selected"][:3]
+            from agents import run_story_platform_pipeline
+            selected_articles = curated.get("selected", []) or []
             useful_outputs = 0
-            for art in top3:
-                result = run_full_pipeline(art)
+            for art in selected_articles:
+                result = run_story_platform_pipeline(art)
                 agent_outputs.append(result)
                 is_useful = any([
                     result.get("post"),
                     result.get("instagram_pack"),
                     result.get("image_prompt"),
                     result.get("voice_script"),
+                    result.get("article_summary"),
                 ])
                 if is_useful:
                     useful_outputs += 1
                     logging.info(f"   ✓ {art.get('title','')[:50]}")
-            if useful_outputs:
+            if not selected_articles:
+                logging.info("   → Sem histórias selecionadas para o pipeline por artigo")
+            elif useful_outputs:
                 logging.info(f"   → {useful_outputs} outputs úteis gerados pelo pipeline")
             else:
                 logging.info("   → Agent pipeline terminou sem outputs úteis")

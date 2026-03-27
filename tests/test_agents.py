@@ -34,64 +34,193 @@ class _FakeClient:
         self.chat = _FakeChat(exc)
 
 
+def make_reader_payload():
+    return json.dumps({
+        "status": "ok",
+        "url": "https://example.com/story",
+        "title": "Headline",
+        "article_summary": [
+            "Linha factual 1",
+            "Linha factual 2",
+            "Linha factual 3",
+        ],
+        "key_points": [
+            "Facto 1",
+            "Facto 2",
+            "Facto 3",
+        ],
+        "angle": "Isto importa para a comunidade.",
+        "tone_hint": "community",
+    })
+
+
+def make_copywriter_payload():
+    return json.dumps({
+        "title": "Headline",
+        "url": "https://example.com/story",
+        "source": "Source",
+        "category": "sim_racing",
+        "score": 80,
+        "article_summary": [
+            "Linha factual 1",
+            "Linha factual 2",
+            "Linha factual 3",
+        ],
+        "instagram": {
+            "image_text": {
+                "hook": "Gancho curto",
+                "line_1": "Linha de apoio 1",
+                "line_2": "Linha de apoio 2",
+            },
+            "caption": {
+                "title": "Título Insta",
+                "body": [
+                    "Legenda 1",
+                    "Legenda 2",
+                    "Legenda 3",
+                ],
+                "link": "https://example.com/story",
+            },
+        },
+        "x": {
+            "post": [
+                "Linha X 1",
+                "Linha X 2",
+                "https://example.com/story",
+            ],
+        },
+        "youtube": {
+            "title": "Título YouTube",
+            "hook": "Hook curto",
+            "description": [
+                "Descrição 1",
+                "Descrição 2",
+                "Descrição 3",
+            ],
+            "voice_script": [
+                "Voz 1",
+                "Voz 2",
+                "Voz 3",
+            ],
+        },
+        "reddit": {
+            "title": "Título Reddit",
+            "body": [
+                "Reddit 1",
+                "Reddit 2",
+                "Reddit 3",
+            ],
+        },
+        "discord": {
+            "post": [
+                "Discord 1",
+                "Discord 2",
+                "https://example.com/story",
+            ],
+        },
+        "email": {
+            "subject": "Assunto Email",
+            "body": [
+                "Email 1",
+                "Email 2",
+                "Email 3",
+            ],
+            "link": "https://example.com/story",
+        },
+    })
+
+
 class AgentPipelineTests(unittest.TestCase):
-    def test_run_full_pipeline_handles_valid_structured_json(self):
-        qa_payload = json.dumps({
-            "approved": False,
-            "average": 6.5,
-            "hashtags": ["#simula"],
-            "improved_post": json.dumps({
-                "format": "carousel_explainer",
-                "cover_hook": "Hook Melhorado",
-                "slides": ["Slide A", "Slide B"],
-                "caption": "Caption melhorada",
-                "community_question": "Concordas?",
-                "cta_style": "implicit",
-                "notes_for_design": "clean",
-            }),
-        })
+    def test_run_story_platform_pipeline_returns_two_agent_story_shape(self):
         with mock.patch.object(
             agents,
-            "run_agent",
-            side_effect=[
-                '{"content_type":"NOTÍCIA GERAL"}',
-                json.dumps({
-                    "format": "carousel_explainer",
-                    "cover_hook": "Hook Inicial",
-                    "slides": ["Slide 1"],
-                    "caption": "Caption",
-                    "community_question": "Pergunta?",
-                    "cta_style": "implicit",
-                    "notes_for_design": "clean",
-                }),
-                "Prompt de imagem",
-                "Script de voz",
-                qa_payload,
-            ],
-        ):
-            result = agents.run_full_pipeline(make_article())
-
-        self.assertEqual(result["instagram_pack"]["cover_hook"], "Hook Melhorado")
-        self.assertIn("Cover Hook: Hook Melhorado", result["post"])
-        self.assertEqual(result["image_prompt"], "Prompt de imagem")
-        self.assertEqual(result["voice_script"], "Script de voz")
-
-    def test_run_full_pipeline_invalid_json_falls_back_to_raw_post(self):
-        with mock.patch.object(
+            "_fetch_article_payload",
+            return_value={
+                "status": "ok",
+                "url": "https://example.com/story",
+                "title": "Headline",
+                "text": "texto suficiente do artigo",
+            },
+        ), mock.patch.object(
             agents,
             "run_agent",
-            side_effect=[
-                '{"content_type":"NOTÍCIA GERAL"}',
-                "not-json",
-                "",
-                "",
-                '{"approved": true, "average": 8.0}',
-            ],
+            side_effect=[make_reader_payload(), make_copywriter_payload()],
         ):
+            result = agents.run_story_platform_pipeline(make_article())
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["reader_status"], "ok")
+        self.assertEqual(result["copy_status"], "ok")
+        self.assertEqual(result["summary_source"], "article_reader")
+        self.assertEqual(result["article_summary"][0], "Linha factual 1")
+        self.assertEqual(result["instagram"]["image_text"]["hook"], "Gancho curto")
+        self.assertEqual(result["instagram"]["caption"]["title"], "Título Insta")
+        self.assertEqual(result["x"]["post"][-1], "https://example.com/story")
+        self.assertEqual(result["youtube"]["title"], "Título YouTube")
+        self.assertEqual(result["reddit"]["title"], "Título Reddit")
+        self.assertEqual(result["discord"]["post"][-1], "https://example.com/story")
+        self.assertEqual(result["email"]["subject"], "Assunto Email")
+        self.assertEqual(result["copywriter_output"]["instagram"]["caption"]["title"], "Título Insta")
+        self.assertIsNot(result["copywriter_output"], result)
+        self.assertEqual(result["voice_script"], "Voz 1\nVoz 2\nVoz 3")
+        self.assertIn("Resumo do artigo:", result["post"])
+        self.assertEqual(json.loads(result["analysis"])["reader_status"], "ok")
+
+    def test_run_story_platform_pipeline_handles_inaccessible_article_safely(self):
+        with mock.patch.object(
+            agents,
+            "_fetch_article_payload",
+            return_value={
+                "status": "cannot_access_article",
+                "url": "https://example.com/story",
+                "title": "Headline",
+                "text": "",
+            },
+        ), mock.patch.object(agents, "run_agent") as run_agent_mock:
+            result = agents.run_story_platform_pipeline(make_article())
+
+        run_agent_mock.assert_not_called()
+        self.assertEqual(result["status"], "fallback")
+        self.assertEqual(result["reader_status"], "cannot_access_article")
+        self.assertEqual(result["copy_status"], "metadata_fallback")
+        self.assertEqual(result["summary_source"], "metadata_fallback")
+        self.assertEqual(result["copywriter_output"], {})
+        self.assertEqual(result["instagram"]["caption"]["link"], "https://example.com/story")
+        self.assertTrue(result["article_summary"])
+
+    def test_run_story_platform_pipeline_invalid_copywriter_json_falls_back_to_reader_context(self):
+        with mock.patch.object(
+            agents,
+            "_fetch_article_payload",
+            return_value={
+                "status": "ok",
+                "url": "https://example.com/story",
+                "title": "Headline",
+                "text": "texto suficiente do artigo",
+            },
+        ), mock.patch.object(
+            agents,
+            "run_agent",
+            side_effect=[make_reader_payload(), "not-json"],
+        ):
+            result = agents.run_story_platform_pipeline(make_article())
+
+        self.assertEqual(result["status"], "fallback")
+        self.assertEqual(result["reader_status"], "ok")
+        self.assertEqual(result["copy_status"], "copywriter_fallback")
+        self.assertEqual(result["summary_source"], "article_reader")
+        self.assertEqual(result["raw_post"], "not-json")
+        self.assertEqual(result["copywriter_output"], {})
+        self.assertEqual(result["article_summary"][0], "Linha factual 1")
+        self.assertEqual(result["instagram"]["caption"]["link"], "https://example.com/story")
+
+    def test_run_full_pipeline_is_backward_compatible_wrapper(self):
+        expected = {"status": "ok", "title": "Wrapped"}
+        with mock.patch.object(agents, "run_story_platform_pipeline", return_value=expected) as pipeline_mock:
             result = agents.run_full_pipeline(make_article())
 
-        self.assertEqual(result["post"], "not-json")
-        self.assertEqual(result["instagram_pack"], {})
+        pipeline_mock.assert_called_once()
+        self.assertIs(result, expected)
 
     def test_run_instagram_digest_pipeline_reparses_structured_improved_post(self):
         digest = [

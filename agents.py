@@ -4,11 +4,20 @@ Cadeia: Analyst → Copywriter → ImageDir → VoiceDir → QA
 Sistema híbrido: corre em paralelo com o formatter existente.
 """
 
+import html
 import json
 import logging
 import os
+import re
 from time import perf_counter
+
+import requests
 from openai import OpenAI
+
+try:
+    from bs4 import BeautifulSoup
+except ImportError:  # pragma: no cover - fallback covered by extraction cleanup
+    BeautifulSoup = None
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +25,10 @@ MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "").strip()
 MINIMAX_BASE_URL = "https://api.minimax.io/v1"
 MODEL = "MiniMax-M2.7"
 AGENT_TIMEOUT_SECONDS = float(os.environ.get("MINIMAX_TIMEOUT_SECONDS", "45"))
+ARTICLE_FETCH_TIMEOUT_SECONDS = float(os.environ.get("ARTICLE_FETCH_TIMEOUT_SECONDS", "15"))
+ARTICLE_READER_MAX_CHARS = int(os.environ.get("ARTICLE_READER_MAX_CHARS", "12000"))
+ARTICLE_READER_MIN_CHARS = int(os.environ.get("ARTICLE_READER_MIN_CHARS", "350"))
+ARTICLE_READER_USER_AGENT = "SimulaNewsMachine/2.2"
 
 client = (
     OpenAI(
@@ -27,6 +40,181 @@ client = (
 )
 
 AGENT_PROMPTS = {
+
+# ============================================================================
+# Two-agent per-story workflow
+# ============================================================================
+"article_reader": """
+És o agent article_reader do Simula Project.
+Recebes:
+- metadados da notícia
+- URL original
+- TEXTO REAL extraído do artigo
+
+MISSÃO:
+- ler o texto real do artigo
+- resumir factualmente a notícia
+- NUNCA escrever copy de publicação
+- NUNCA trabalhar apenas do título se o texto do artigo for insuficiente
+
+LÍNGUA:
+- PT-PT rigoroso
+- curto
+- factual
+
+SE O TEXTO EXTRAÍDO NÃO FOR SUFICIENTE:
+- devolve EXATAMENTE:
+{
+  "status": "cannot_access_article",
+  "url": "original url",
+  "title": "original title"
+}
+
+SE FOR SUFICIENTE:
+- devolve EXATAMENTE este JSON:
+{
+  "status": "ok",
+  "url": "original url",
+  "title": "original title",
+  "article_summary": [
+    "linha curta 1",
+    "linha curta 2",
+    "linha curta 3"
+  ],
+  "key_points": [
+    "facto 1",
+    "facto 2",
+    "facto 3"
+  ],
+  "angle": "explica em 1 frase porque esta notícia importa",
+  "tone_hint": "factual|breaking|community|product|motorsport|nostalgia"
+}
+
+REGRAS:
+- article_summary = 2 ou 3 linhas curtas
+- key_points = 2 a 4 factos curtos
+- sem hype
+- sem especulação
+- sem marketing
+- responder APENAS com JSON
+""",
+
+"platform_copywriter": """
+És o agent platform_copywriter do Simula Project.
+Recebes:
+- metadados da notícia
+- resumo factual já lido do artigo
+- key_points
+- angle
+- tone_hint
+
+MISSÃO:
+- gerar output curto, específico e publicável para UMA notícia de cada vez
+- NUNCA juntar histórias
+- NUNCA criar digests
+- NUNCA escrever a partir de title/source/score apenas
+- NUNCA gerar prompts cinematográficos
+
+LÍNGUA:
+- PT-PT rigoroso
+- natural
+- curto
+- sem tom corporativo
+
+PROIBIDO:
+- revolucionário
+- incrível
+- fantástico
+- imperdível
+- épico
+- não percas
+
+Devolve EXATAMENTE este JSON:
+{
+  "title": "original news title",
+  "url": "original news url",
+  "source": "source name",
+  "category": "category",
+  "score": 0,
+  "article_summary": [
+    "linha 1",
+    "linha 2",
+    "linha 3"
+  ],
+  "instagram": {
+    "image_text": {
+      "hook": "gancho curto",
+      "line_1": "linha curta",
+      "line_2": "linha curta"
+    },
+    "caption": {
+      "title": "título curto",
+      "body": [
+        "linha curta 1",
+        "linha curta 2",
+        "linha curta 3",
+        "linha curta 4"
+      ],
+      "link": "original news url"
+    }
+  },
+  "x": {
+    "post": [
+      "linha curta 1",
+      "linha curta 2",
+      "original news url"
+    ]
+  },
+  "youtube": {
+    "title": "título curto de YouTube",
+    "hook": "gancho curto",
+    "description": [
+      "linha curta 1",
+      "linha curta 2",
+      "linha curta 3"
+    ],
+    "voice_script": [
+      "linha curta 1",
+      "linha curta 2",
+      "linha curta 3"
+    ]
+  },
+  "reddit": {
+    "title": "título para Reddit",
+    "body": [
+      "linha curta 1",
+      "linha curta 2",
+      "linha curta 3"
+    ]
+  },
+  "discord": {
+    "post": [
+      "linha curta 1",
+      "linha curta 2",
+      "original news url"
+    ]
+  },
+  "email": {
+    "subject": "assunto curto",
+    "body": [
+      "linha curta 1",
+      "linha curta 2",
+      "linha curta 3"
+    ],
+    "link": "original news url"
+  }
+}
+
+REGRAS:
+- article_summary deve manter 2-3 linhas factuais
+- Instagram: texto curto para imagem + caption curta
+- X: directo e compacto
+- YouTube: curto, claro, sem floreados
+- Reddit: informativo, sem marketing
+- Discord: útil e conversacional
+- Email: curto e limpo
+- responder APENAS com JSON
+""",
 
 # ============================================================================
 # Single-article editorial prompts
@@ -463,6 +651,435 @@ def _build_digest_summary(digest_articles, digest_type):
     return "\n".join(lines).strip()
 
 
+def _normalize_article(article: dict | None) -> dict:
+    article = article or {}
+    return {
+        "title": str(article.get("title") or "").strip(),
+        "source": str(article.get("source") or "").strip(),
+        "summary": str(article.get("summary") or "").strip(),
+        "score": int(article.get("score", 0) or 0),
+        "link": str(article.get("link") or article.get("url") or "").strip(),
+        "category": str(article.get("category") or "unknown").strip() or "unknown",
+    }
+
+
+def _clean_line(text, max_chars: int = 180) -> str:
+    cleaned = html.unescape(str(text or ""))
+    cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -•\t\r\n")
+    if len(cleaned) > max_chars:
+        cleaned = cleaned[: max_chars - 1].rstrip() + "…"
+    return cleaned
+
+
+def _normalize_lines(value, *, min_items: int = 0, max_items: int = 4, max_chars: int = 180) -> list[str]:
+    if isinstance(value, str):
+        raw_items = [part for part in re.split(r"[\n\r]+", value) if part.strip()]
+    elif isinstance(value, list):
+        raw_items = value
+    else:
+        raw_items = []
+
+    lines = []
+    seen = set()
+    for item in raw_items:
+        line = _clean_line(item, max_chars=max_chars)
+        lowered = line.lower()
+        if not line or lowered in seen:
+            continue
+        seen.add(lowered)
+        lines.append(line)
+        if len(lines) >= max_items:
+            break
+
+    return lines if len(lines) >= min_items else []
+
+
+def _metadata_summary_lines(article: dict) -> list[str]:
+    article = _normalize_article(article)
+    summary = _clean_line(article.get("summary", ""), max_chars=170)
+    fallback = [
+        summary,
+        _clean_line(f"Fonte: {article.get('source', 'Fonte desconhecida')}", max_chars=120),
+        _clean_line(f"Categoria: {article.get('category', 'unknown')}", max_chars=120),
+    ]
+    return _normalize_lines(fallback, max_items=3, max_chars=170)
+
+
+def _extract_article_text(html_text: str) -> str:
+    if not html_text:
+        return ""
+
+    best_text = ""
+    if BeautifulSoup is not None:
+        soup = BeautifulSoup(html_text, "html.parser")
+        for tag in soup(["script", "style", "noscript", "svg", "form", "nav", "header", "footer", "aside"]):
+            tag.decompose()
+
+        candidates = []
+        for node in [soup.find("article"), soup.find("main"), soup.body, soup]:
+            if node is None:
+                continue
+            text = node.get_text("\n", strip=True)
+            text = html.unescape(text)
+            text = re.sub(r"[ \t]+", " ", text)
+            text = re.sub(r"\n{2,}", "\n", text)
+            candidates.append(text.strip())
+        best_text = max(candidates, key=len, default="")
+    else:  # pragma: no cover - exercised only if bs4 is unavailable
+        best_text = re.sub(r"<[^>]+>", "\n", html_text)
+        best_text = html.unescape(best_text)
+
+    lines = []
+    seen = set()
+    for line in best_text.splitlines():
+        cleaned = _clean_line(line, max_chars=260)
+        lowered = cleaned.lower()
+        if len(cleaned) < 30 or lowered in seen:
+            continue
+        seen.add(lowered)
+        lines.append(cleaned)
+        if len("\n".join(lines)) >= ARTICLE_READER_MAX_CHARS:
+            break
+
+    return "\n".join(lines).strip()[:ARTICLE_READER_MAX_CHARS].strip()
+
+
+def _fetch_article_payload(article: dict) -> dict:
+    article = _normalize_article(article)
+    url = article.get("link", "")
+    if not url:
+        return {"status": "cannot_access_article", "url": "", "title": article.get("title", ""), "text": ""}
+
+    try:
+        response = requests.get(
+            url,
+            timeout=ARTICLE_FETCH_TIMEOUT_SECONDS,
+            headers={"User-Agent": ARTICLE_READER_USER_AGENT},
+        )
+        response.raise_for_status()
+    except requests.exceptions.RequestException as exc:
+        logger.warning("Article fetch failed for %s: %s", url, exc)
+        return {"status": "cannot_access_article", "url": url, "title": article.get("title", ""), "text": ""}
+
+    extracted = _extract_article_text(response.text)
+    if len(extracted) < ARTICLE_READER_MIN_CHARS:
+        logger.warning("Article fetch too thin for %s (%d chars)", url, len(extracted))
+        return {"status": "cannot_access_article", "url": url, "title": article.get("title", ""), "text": ""}
+
+    return {"status": "ok", "url": url, "title": article.get("title", ""), "text": extracted}
+
+
+def _build_article_reader_input(article: dict, article_text: str) -> str:
+    article = _normalize_article(article)
+    return (
+        "METADADOS DA NOTÍCIA\n"
+        f"Título: {article.get('title', '')}\n"
+        f"Fonte: {article.get('source', '')}\n"
+        f"Categoria: {article.get('category', '')}\n"
+        f"Score: {article.get('score', 0)}\n"
+        f"URL: {article.get('link', '')}\n\n"
+        "TEXTO REAL EXTRAÍDO DO ARTIGO\n"
+        f"{article_text}"
+    ).strip()
+
+
+def _build_platform_copywriter_input(article: dict, reader_output: dict) -> str:
+    article = _normalize_article(article)
+    reader_output = reader_output or {}
+    payload = {
+        "title": article.get("title", ""),
+        "url": article.get("link", ""),
+        "source": article.get("source", ""),
+        "category": article.get("category", ""),
+        "score": article.get("score", 0),
+        "article_summary": reader_output.get("article_summary", []),
+        "key_points": reader_output.get("key_points", []),
+        "angle": reader_output.get("angle", ""),
+        "tone_hint": reader_output.get("tone_hint", "factual"),
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _normalize_reader_output(payload: dict | None, article: dict) -> dict:
+    article = _normalize_article(article)
+    failure = {
+        "status": "cannot_access_article",
+        "url": article.get("link", ""),
+        "title": article.get("title", ""),
+    }
+    if not isinstance(payload, dict):
+        return failure
+
+    status = str(payload.get("status") or "").strip().lower()
+    if status != "ok":
+        return failure
+
+    article_summary = _normalize_lines(payload.get("article_summary", []), min_items=2, max_items=3, max_chars=170)
+    key_points = _normalize_lines(payload.get("key_points", []), min_items=2, max_items=4, max_chars=170)
+    angle = _clean_line(payload.get("angle", ""), max_chars=180)
+    tone_hint = _clean_line(payload.get("tone_hint", "factual"), max_chars=40) or "factual"
+
+    if not article_summary or not key_points or not angle:
+        return failure
+
+    return {
+        "status": "ok",
+        "url": article.get("link", ""),
+        "title": article.get("title", ""),
+        "article_summary": article_summary,
+        "key_points": key_points,
+        "angle": angle,
+        "tone_hint": tone_hint,
+    }
+
+
+def _normalize_instagram_payload(payload: dict, article: dict, summary_lines: list[str]) -> dict:
+    payload = payload if isinstance(payload, dict) else {}
+    article = _normalize_article(article)
+    image_text = payload.get("image_text", {}) if isinstance(payload.get("image_text"), dict) else {}
+    caption = payload.get("caption", {}) if isinstance(payload.get("caption"), dict) else {}
+
+    hook = _clean_line(image_text.get("hook") or article.get("title", ""), max_chars=90)
+    line_1 = _clean_line(image_text.get("line_1") or (summary_lines[0] if summary_lines else ""), max_chars=110)
+    line_2 = _clean_line(
+        image_text.get("line_2") or (summary_lines[1] if len(summary_lines) > 1 else article.get("source", "")),
+        max_chars=110,
+    )
+    caption_title = _clean_line(caption.get("title") or article.get("title", ""), max_chars=90)
+    caption_body = _normalize_lines(caption.get("body", []), min_items=2, max_items=4, max_chars=170) or summary_lines[:4]
+
+    return {
+        "image_text": {
+            "hook": hook,
+            "line_1": line_1,
+            "line_2": line_2,
+        },
+        "caption": {
+            "title": caption_title,
+            "body": caption_body[:4],
+            "link": article.get("link", ""),
+        },
+    }
+
+
+def _normalize_story_copy_payload(payload: dict | None, article: dict, reader_output: dict) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+
+    article = _normalize_article(article)
+    summary_lines = _normalize_lines(
+        payload.get("article_summary", []) or reader_output.get("article_summary", []),
+        min_items=2,
+        max_items=3,
+        max_chars=170,
+    )
+    if not summary_lines:
+        summary_lines = _normalize_lines(reader_output.get("article_summary", []), min_items=2, max_items=3, max_chars=170)
+    if not summary_lines:
+        return None
+
+    x_payload = payload.get("x", {}) if isinstance(payload.get("x"), dict) else {}
+    youtube_payload = payload.get("youtube", {}) if isinstance(payload.get("youtube"), dict) else {}
+    reddit_payload = payload.get("reddit", {}) if isinstance(payload.get("reddit"), dict) else {}
+    discord_payload = payload.get("discord", {}) if isinstance(payload.get("discord"), dict) else {}
+    email_payload = payload.get("email", {}) if isinstance(payload.get("email"), dict) else {}
+
+    x_post = _normalize_lines(x_payload.get("post", []), min_items=2, max_items=3, max_chars=180)
+    if article.get("link") and article.get("link") not in x_post:
+        x_post = [*x_post[:2], article.get("link", "")]
+
+    youtube_description = _normalize_lines(youtube_payload.get("description", []), min_items=2, max_items=3, max_chars=180) or summary_lines[:3]
+    youtube_voice = _normalize_lines(youtube_payload.get("voice_script", []), min_items=2, max_items=3, max_chars=180) or summary_lines[:3]
+    reddit_body = _normalize_lines(reddit_payload.get("body", []), min_items=2, max_items=3, max_chars=220) or summary_lines[:3]
+    discord_post = _normalize_lines(discord_payload.get("post", []), min_items=2, max_items=3, max_chars=180)
+    if article.get("link") and article.get("link") not in discord_post:
+        discord_post = [*discord_post[:2], article.get("link", "")]
+    email_body = _normalize_lines(email_payload.get("body", []), min_items=2, max_items=3, max_chars=180) or summary_lines[:3]
+
+    instagram = _normalize_instagram_payload(payload.get("instagram", {}), article, summary_lines)
+
+    return {
+        "title": _clean_line(payload.get("title") or article.get("title", ""), max_chars=120),
+        "url": article.get("link", ""),
+        "source": article.get("source", ""),
+        "category": article.get("category", ""),
+        "score": article.get("score", 0),
+        "article_summary": summary_lines,
+        "instagram": instagram,
+        "x": {"post": x_post[:3]},
+        "youtube": {
+            "title": _clean_line(youtube_payload.get("title") or article.get("title", ""), max_chars=100),
+            "hook": _clean_line(youtube_payload.get("hook") or summary_lines[0], max_chars=90),
+            "description": youtube_description[:3],
+            "voice_script": youtube_voice[:3],
+        },
+        "reddit": {
+            "title": _clean_line(reddit_payload.get("title") or article.get("title", ""), max_chars=120),
+            "body": reddit_body[:3],
+        },
+        "discord": {"post": discord_post[:3]},
+        "email": {
+            "subject": _clean_line(email_payload.get("subject") or article.get("title", ""), max_chars=120),
+            "body": email_body[:3],
+            "link": article.get("link", ""),
+        },
+    }
+
+
+def _build_story_platform_fallback(article: dict, reader_output: dict | None = None, *, reason: str = "cannot_access_article") -> dict:
+    article = _normalize_article(article)
+    reader_output = reader_output or {
+        "status": "cannot_access_article",
+        "url": article.get("link", ""),
+        "title": article.get("title", ""),
+    }
+    summary_lines = (
+        _normalize_lines(reader_output.get("article_summary", []), max_items=3, max_chars=170)
+        if reader_output.get("status") == "ok"
+        else _metadata_summary_lines(article)
+    )
+    if not summary_lines:
+        summary_lines = [_clean_line(article.get("title", "Sem título"), max_chars=170)]
+
+    base = {
+        "title": article.get("title", ""),
+        "url": article.get("link", ""),
+        "source": article.get("source", ""),
+        "category": article.get("category", ""),
+        "score": article.get("score", 0),
+        "article_summary": summary_lines[:3],
+        "instagram": {
+            "image_text": {
+                "hook": _clean_line(article.get("title", ""), max_chars=90),
+                "line_1": _clean_line(summary_lines[0] if summary_lines else "", max_chars=110),
+                "line_2": _clean_line(summary_lines[1] if len(summary_lines) > 1 else article.get("source", ""), max_chars=110),
+            },
+            "caption": {
+                "title": _clean_line(article.get("title", ""), max_chars=90),
+                "body": summary_lines[:4],
+                "link": article.get("link", ""),
+            },
+        },
+        "x": {
+            "post": _normalize_lines(
+                [article.get("title", ""), summary_lines[0] if summary_lines else "", article.get("link", "")],
+                min_items=2,
+                max_items=3,
+                max_chars=180,
+            )[:3],
+        },
+        "youtube": {
+            "title": _clean_line(article.get("title", ""), max_chars=100),
+            "hook": _clean_line(summary_lines[0] if summary_lines else article.get("title", ""), max_chars=90),
+            "description": summary_lines[:3],
+            "voice_script": summary_lines[:3],
+        },
+        "reddit": {
+            "title": _clean_line(article.get("title", ""), max_chars=120),
+            "body": summary_lines[:3],
+        },
+        "discord": {
+            "post": _normalize_lines(
+                [article.get("title", ""), summary_lines[0] if summary_lines else "", article.get("link", "")],
+                min_items=2,
+                max_items=3,
+                max_chars=180,
+            )[:3],
+        },
+        "email": {
+            "subject": _clean_line(article.get("title", ""), max_chars=120),
+            "body": summary_lines[:3],
+            "link": article.get("link", ""),
+        },
+    }
+    base["status"] = "fallback"
+    base["reader_status"] = reader_output.get("status", "cannot_access_article")
+    base["copy_status"] = reason
+    base["summary_source"] = "article_reader" if reader_output.get("status") == "ok" else "metadata_fallback"
+    return base
+
+
+def _build_legacy_instagram_pack(story_output: dict) -> dict:
+    instagram = story_output.get("instagram", {}) if isinstance(story_output, dict) else {}
+    image_text = instagram.get("image_text", {}) if isinstance(instagram.get("image_text"), dict) else {}
+    caption = instagram.get("caption", {}) if isinstance(instagram.get("caption"), dict) else {}
+    caption_body = _normalize_lines(caption.get("body", []), max_items=4, max_chars=180)
+    caption_parts = [caption.get("title", ""), *caption_body]
+    if caption.get("link"):
+        caption_parts.append(caption.get("link", ""))
+    slides = [image_text.get("line_1", ""), image_text.get("line_2", "")]
+    slides = [line for line in slides if _clean_line(line, max_chars=120)]
+    return {
+        "format": "story_platform_workspace",
+        "cover_hook": _clean_line(image_text.get("hook", ""), max_chars=90),
+        "slides": slides,
+        "caption": "\n".join(part for part in caption_parts if part).strip(),
+        "community_question": "",
+        "cta_style": "implicit",
+        "notes_for_design": "Per-story output generated from article_reader + platform_copywriter.",
+    }
+
+
+def _compose_story_platform_post(story_output: dict) -> str:
+    story_output = story_output or {}
+    instagram = story_output.get("instagram", {}) if isinstance(story_output.get("instagram"), dict) else {}
+    image_text = instagram.get("image_text", {}) if isinstance(instagram.get("image_text"), dict) else {}
+    caption = instagram.get("caption", {}) if isinstance(instagram.get("caption"), dict) else {}
+    lines = ["Resumo do artigo:"]
+    for item in story_output.get("article_summary", [])[:3]:
+        lines.append(f"- {item}")
+    lines.extend([
+        "",
+        "Instagram image text:",
+        image_text.get("hook", ""),
+        image_text.get("line_1", ""),
+        image_text.get("line_2", ""),
+        "",
+        "Instagram caption:",
+        caption.get("title", ""),
+        *caption.get("body", []),
+    ])
+    if caption.get("link"):
+        lines.append(caption.get("link", ""))
+    return "\n".join(line for line in lines if line).strip()
+
+
+def _legacy_analysis_payload(story_output: dict, reader_output: dict) -> str:
+    payload = {
+        "why_it_matters": reader_output.get("angle", ""),
+        "headline_hook": (
+            story_output.get("instagram", {})
+            .get("image_text", {})
+            .get("hook", "")
+        ),
+        "community_question": "",
+        "tone_hint": reader_output.get("tone_hint", "factual"),
+        "article_summary": story_output.get("article_summary", []),
+        "reader_status": reader_output.get("status", "cannot_access_article"),
+        "copy_status": story_output.get("copy_status", ""),
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _copywriter_output_payload(story_output: dict) -> dict:
+    story_output = story_output or {}
+    return {
+        "title": story_output.get("title", ""),
+        "url": story_output.get("url", ""),
+        "source": story_output.get("source", ""),
+        "category": story_output.get("category", ""),
+        "score": story_output.get("score", 0),
+        "article_summary": list(story_output.get("article_summary", []) or []),
+        "instagram": dict(story_output.get("instagram", {}) or {}),
+        "x": dict(story_output.get("x", {}) or {}),
+        "youtube": dict(story_output.get("youtube", {}) or {}),
+        "reddit": dict(story_output.get("reddit", {}) or {}),
+        "discord": dict(story_output.get("discord", {}) or {}),
+        "email": dict(story_output.get("email", {}) or {}),
+    }
+
+
 def run_agent(agent_name: str, user_input: str, context: str = "", metrics: dict | None = None) -> str:
     started_at = perf_counter()
     if metrics is not None:
@@ -520,64 +1137,124 @@ def run_agent(agent_name: str, user_input: str, context: str = "", metrics: dict
         return ""
 
 
-def run_full_pipeline(article: dict) -> dict:
-    """Corre os 5 agentes em cadeia. Retorna dict com todos os outputs."""
+def run_story_platform_pipeline(article: dict) -> dict:
+    """Two-agent per-story workflow: article reader first, platform copy second."""
+    normalized_article = _normalize_article(article)
     pipeline_started_at = perf_counter()
-    metrics = _new_agent_metrics("single_article")
-    summary = (
-        f"Título: {article.get('title','')}\n"
-        f"Fonte: {article.get('source','')}\n"
-        f"Resumo: {(article.get('summary') or '')[:600]}\n"
-        f"Score editorial: {article.get('score', 0)}/100\n"
-        f"Link: {article.get('link','')}"
+    metrics = _new_agent_metrics("story_platform")
+    logger.info("Story platform pipeline: '%s'", normalized_article.get("title", "")[:60])
+
+    fetched = _fetch_article_payload(normalized_article)
+    if fetched.get("status") != "ok":
+        result = _build_story_platform_fallback(
+            normalized_article,
+            {
+                "status": "cannot_access_article",
+                "url": normalized_article.get("link", ""),
+                "title": normalized_article.get("title", ""),
+            },
+            reason="metadata_fallback",
+        )
+        result.update({
+            "article": normalized_article,
+            "reader_output": {
+                "status": "cannot_access_article",
+                "url": normalized_article.get("link", ""),
+                "title": normalized_article.get("title", ""),
+            },
+            "copywriter_output": {},
+            "analysis": _legacy_analysis_payload(result, {
+                "status": "cannot_access_article",
+                "angle": "",
+                "tone_hint": "factual",
+            }),
+            "post": _compose_story_platform_post(result),
+            "instagram_pack": _build_legacy_instagram_pack(result),
+            "image_prompt": "",
+            "voice_script": "\n".join(result.get("youtube", {}).get("voice_script", [])).strip(),
+            "qa": "",
+            "raw_post": "",
+            "agent_metrics": metrics,
+        })
+        metrics["total_duration_sec"] = round(perf_counter() - pipeline_started_at, 3)
+        metrics["useful_output"] = bool(result.get("post"))
+        return result
+
+    reader_input = _build_article_reader_input(normalized_article, fetched.get("text", ""))
+    reader_raw = run_agent("article_reader", reader_input, metrics=metrics)
+    reader_data = _normalize_reader_output(
+        _parse_agent_json(reader_raw, "article_reader", metrics),
+        normalized_article,
     )
-    logger.info(f"Pipeline: '{article.get('title','')[:50]}'")
+    if reader_data.get("status") != "ok":
+        result = _build_story_platform_fallback(normalized_article, reader_data, reason="metadata_fallback")
+        result.update({
+            "article": normalized_article,
+            "reader_output": reader_data,
+            "copywriter_output": {},
+            "analysis": _legacy_analysis_payload(result, reader_data),
+            "post": _compose_story_platform_post(result),
+            "instagram_pack": _build_legacy_instagram_pack(result),
+            "image_prompt": "",
+            "voice_script": "\n".join(result.get("youtube", {}).get("voice_script", [])).strip(),
+            "qa": "",
+            "raw_post": "",
+            "agent_metrics": metrics,
+        })
+        metrics["total_duration_sec"] = round(perf_counter() - pipeline_started_at, 3)
+        metrics["useful_output"] = bool(result.get("post"))
+        return result
 
-    analysis = run_agent("analyst", summary, metrics=metrics)
-    raw_post = run_agent("copywriter", summary, analysis, metrics=metrics)
+    copy_raw = run_agent(
+        "platform_copywriter",
+        _build_platform_copywriter_input(normalized_article, reader_data),
+        context=json.dumps(reader_data, ensure_ascii=False, indent=2),
+        metrics=metrics,
+    )
+    structured_story = _normalize_story_copy_payload(
+        _parse_agent_json(copy_raw, "platform_copywriter", metrics),
+        normalized_article,
+        reader_data,
+    )
+    copywriter_succeeded = structured_story is not None
+    if structured_story is None:
+        structured_story = _build_story_platform_fallback(
+            normalized_article,
+            reader_data,
+            reason="copywriter_fallback",
+        )
+    else:
+        structured_story["status"] = "ok"
+        structured_story["reader_status"] = "ok"
+        structured_story["copy_status"] = "ok"
+        structured_story["summary_source"] = "article_reader"
 
-    instagram_pack = {}
-    post = raw_post
-    parsed_pack = _parse_agent_json(raw_post, "copywriter", metrics)
-    if parsed_pack:
-        instagram_pack = parsed_pack
-        composed_post = _compose_instagram_post(instagram_pack)
-        if composed_post:
-            post = composed_post
-    elif raw_post:
-        logger.info("Copywriter fallback para texto bruto no pipeline single-article")
-
-    img_prompt = run_agent("image_director", post, analysis, metrics=metrics)
-    voice = run_agent("voice_director", post, metrics=metrics)
-    qa_result = run_agent("qa", post, metrics=metrics)
-
-    final_post = post
-    qa_data = _parse_agent_json(qa_result, "qa", metrics)
-    if qa_data and not qa_data.get("approved") and qa_data.get("improved_post"):
-        improved_post = str(qa_data.get("improved_post") or "")
-        improved_pack = _parse_agent_json(improved_post, "qa.improved_post", metrics)
-        if improved_pack:
-            instagram_pack = improved_pack
-            final_post = _compose_instagram_post(improved_pack) or improved_post
-            logger.info("QA rejeitou → usando improved_post estruturado")
-        else:
-            final_post = improved_post
-            logger.info("QA rejeitou → usando improved_post em texto")
-
-    metrics["total_duration_sec"] = round(perf_counter() - pipeline_started_at, 3)
-    metrics["useful_output"] = bool(any([final_post, instagram_pack, img_prompt, voice]))
-
-    return {
-        "article": article,
-        "analysis": analysis,
-        "post": final_post,
-        "instagram_pack": instagram_pack,
-        "image_prompt": img_prompt,
-        "voice_script": voice,
-        "qa": qa_result,
-        "raw_post": raw_post,
+    copywriter_output = _copywriter_output_payload(structured_story) if copywriter_succeeded else {}
+    structured_story.update({
+        "article": normalized_article,
+        "reader_output": reader_data,
+        "copywriter_output": copywriter_output,
+        "analysis": _legacy_analysis_payload(structured_story, reader_data),
+        "post": _compose_story_platform_post(structured_story),
+        "instagram_pack": _build_legacy_instagram_pack(structured_story),
+        "image_prompt": "",
+        "voice_script": "\n".join(structured_story.get("youtube", {}).get("voice_script", [])).strip(),
+        "qa": "",
+        "raw_post": copy_raw,
         "agent_metrics": metrics,
-    }
+    })
+    metrics["total_duration_sec"] = round(perf_counter() - pipeline_started_at, 3)
+    metrics["useful_output"] = bool(any([
+        structured_story.get("post"),
+        structured_story.get("instagram_pack"),
+        structured_story.get("voice_script"),
+    ]))
+    return structured_story
+
+
+def run_full_pipeline(article: dict) -> dict:
+    """Backward-compatible wrapper for the current per-story agent entrypoint."""
+    return run_story_platform_pipeline(article)
 
 
 def run_instagram_digest_pipeline(digest_articles: list, digest_type: str) -> dict:

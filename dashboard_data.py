@@ -156,6 +156,13 @@ def _has_useful_output(output: dict) -> bool:
         output.get("instagram_pack"),
         output.get("image_prompt"),
         output.get("voice_script"),
+        output.get("article_summary"),
+        output.get("instagram"),
+        output.get("x"),
+        output.get("youtube"),
+        output.get("reddit"),
+        output.get("discord"),
+        output.get("email"),
     ])
 
 
@@ -204,6 +211,19 @@ def _parse_analysis_data(output: dict | None) -> dict:
         return parsed if isinstance(parsed, dict) else {}
     except Exception:
         return {}
+
+
+def _normalized_story_summary_lines(story: dict, agent_output: dict | None = None, limit: int = 4) -> list[str]:
+    story = normalize_story(story)
+    agent_output = _normalize_output(agent_output or {})
+    return _dedupe_non_empty_lines(
+        [
+            *(agent_output.get("article_summary", []) or []),
+            story.get("summary", ""),
+            f"Fonte: {story.get('source', 'Fonte desconhecida')}",
+        ],
+        limit=limit,
+    )
 
 
 def _extract_article_slide_text(pack: dict, index: int) -> str:
@@ -454,12 +474,36 @@ def _normalize_output(output) -> dict:
     normalized["image_prompt"] = normalized.get("image_prompt", "") or ""
     normalized["voice_script"] = normalized.get("voice_script", "") or ""
     normalized["qa"] = normalized.get("qa", "") or ""
+    normalized["status"] = normalized.get("status", "") or ""
+    normalized["reader_status"] = normalized.get("reader_status", "") or ""
+    normalized["copy_status"] = normalized.get("copy_status", "") or ""
+    normalized["summary_source"] = normalized.get("summary_source", "") or ""
+    normalized["article_summary"] = _dedupe_non_empty_lines(
+        normalized.get("article_summary", []),
+        limit=3,
+    )
     normalized["agent_metrics"] = _normalize_agent_metrics(normalized.get("agent_metrics", {}))
     normalized["instagram_pack"] = (
         normalized.get("instagram_pack", {})
         if isinstance(normalized.get("instagram_pack"), dict)
         else {}
     )
+    normalized["reader_output"] = (
+        normalized.get("reader_output", {})
+        if isinstance(normalized.get("reader_output"), dict)
+        else {}
+    )
+    normalized["copywriter_output"] = (
+        normalized.get("copywriter_output", {})
+        if isinstance(normalized.get("copywriter_output"), dict)
+        else {}
+    )
+    for platform in WORKSPACE_PLATFORMS:
+        normalized[platform] = (
+            normalized.get(platform, {})
+            if isinstance(normalized.get(platform), dict)
+            else {}
+        )
     return normalized
 
 
@@ -1007,50 +1051,73 @@ def _suggest_platforms(planner_tags: list[str]) -> list[str]:
 def _build_instagram_workspace_output(story: dict, agent_output: dict) -> dict:
     story = normalize_story(story)
     agent_output = _normalize_output(agent_output)
+    structured_instagram = agent_output.get("instagram", {}) if isinstance(agent_output.get("instagram"), dict) else {}
     pack = agent_output.get("instagram_pack", {}) if isinstance(agent_output, dict) else {}
     qa_data = parse_qa_data(agent_output.get("qa", ""))
     analysis_data = _parse_analysis_data(agent_output)
+    summary_lines = _normalized_story_summary_lines(story, agent_output, limit=4)
 
-    hook = _compact_text(pack.get("cover_hook") or story.get("title", ""), 90)
-    line_1 = _extract_article_slide_text(pack, 0) or _compact_text(
-        story.get("summary") or analysis_data.get("why_it_matters") or "",
-        110,
-    )
-    line_2 = _extract_article_slide_text(pack, 1) or _compact_text(
-        analysis_data.get("community_question")
-        or analysis_data.get("headline_hook")
-        or f"{story.get('source', 'Fonte desconhecida')} • {story.get('category', 'unknown')}",
-        110,
-    )
+    if structured_instagram:
+        image_text = structured_instagram.get("image_text", {}) if isinstance(structured_instagram.get("image_text"), dict) else {}
+        caption = structured_instagram.get("caption", {}) if isinstance(structured_instagram.get("caption"), dict) else {}
+        hook = _compact_text(image_text.get("hook") or story.get("title", ""), 90)
+        line_1 = _compact_text(image_text.get("line_1") or (summary_lines[0] if summary_lines else ""), 110)
+        line_2 = _compact_text(
+            image_text.get("line_2") or (summary_lines[1] if len(summary_lines) > 1 else story.get("source", "")),
+            110,
+        )
+        caption_title = _compact_text(caption.get("title") or story.get("title", ""), 90)
+        caption_lines = _dedupe_non_empty_lines(
+            [
+                *caption.get("body", []),
+                *summary_lines,
+            ],
+            limit=4,
+        )
+        mode = "article_reader_copy"
+        message = "Structured Instagram output from the latest two-agent per-story run."
+        caption_link = caption.get("link") or story.get("link", "")
+    else:
+        hook = _compact_text(pack.get("cover_hook") or story.get("title", ""), 90)
+        line_1 = _extract_article_slide_text(pack, 0) or _compact_text(
+            story.get("summary") or analysis_data.get("why_it_matters") or "",
+            110,
+        )
+        line_2 = _extract_article_slide_text(pack, 1) or _compact_text(
+            analysis_data.get("community_question")
+            or analysis_data.get("headline_hook")
+            or f"{story.get('source', 'Fonte desconhecida')} • {story.get('category', 'unknown')}",
+            110,
+        )
 
-    caption_source = pack.get("caption") or ""
-    caption_lines = _dedupe_non_empty_lines(
-        [
-            *_split_copy_lines(caption_source, limit=4),
-            story.get("summary", ""),
-            analysis_data.get("why_it_matters", ""),
-            f"Fonte: {story.get('source', 'Fonte desconhecida')}",
-        ],
-        limit=4,
-    )
-    if not caption_lines:
-        caption_lines = [
-            _compact_text(story.get("summary") or story.get("title", ""), 160),
-            f"Fonte: {story.get('source', 'Fonte desconhecida')}",
-        ]
+        caption_source = pack.get("caption") or ""
+        caption_title = story.get("title", "Sem título")
+        caption_lines = _dedupe_non_empty_lines(
+            [
+                *_split_copy_lines(caption_source, limit=4),
+                *summary_lines,
+                analysis_data.get("why_it_matters", ""),
+            ],
+            limit=4,
+        )
+        if not caption_lines:
+            caption_lines = [
+                _compact_text(story.get("summary") or story.get("title", ""), 160),
+                f"Fonte: {story.get('source', 'Fonte desconhecida')}",
+            ]
+        mode = "agent_ready" if pack else "fallback_story_draft"
+        message = (
+            "Structured Instagram pack from the latest article-level agent run."
+            if pack
+            else "Built from story metadata because the latest run has no article-level Instagram pack for this story."
+        )
+        caption_link = story.get("link", "")
 
     hashtags = [str(tag) for tag in qa_data.get("hashtags", []) if tag]
     image_text_lines = [line for line in [hook, line_1, line_2] if line]
-    caption_parts = [story.get("title", "Sem título"), *caption_lines]
-    if story.get("link"):
-        caption_parts.append(story.get("link", ""))
-
-    mode = "agent_ready" if pack else "fallback_story_draft"
-    message = (
-        "Structured Instagram pack from the latest article-level agent run."
-        if pack
-        else "Built from story metadata because the latest run has no article-level Instagram pack for this story."
-    )
+    caption_parts = [caption_title, *caption_lines]
+    if caption_link:
+        caption_parts.append(caption_link)
 
     return {
         "platform": "instagram",
@@ -1065,7 +1132,7 @@ def _build_instagram_workspace_output(story: dict, agent_output: dict) -> dict:
             "text": "\n".join(image_text_lines).strip(),
         },
         "caption": {
-            "title": story.get("title", "Sem título"),
+            "title": caption_title,
             "lines": caption_lines,
             "text": "\n".join(part for part in caption_parts if part).strip(),
         },
@@ -1081,29 +1148,38 @@ def _build_instagram_workspace_output(story: dict, agent_output: dict) -> dict:
 
 def _build_x_workspace_output(story: dict, agent_output: dict, planner_tags: list[str]) -> dict:
     story = normalize_story(story)
+    agent_output = _normalize_output(agent_output)
     analysis_data = _parse_analysis_data(agent_output)
-    lines = _dedupe_non_empty_lines(
-        [
-            story.get("title", ""),
-            analysis_data.get("why_it_matters", ""),
-            story.get("summary", ""),
-        ],
-        limit=3,
-    )
-    text_parts = [
-        lines[0] if lines else story.get("title", "Sem título"),
-        lines[1] if len(lines) > 1 else "",
-        story.get("link", ""),
-    ]
-    message = (
-        "This story is already used in an X slot in the latest plan."
-        if any(tag.startswith("X Thread") for tag in planner_tags)
-        else "Manual X draft built from the selected story."
-    )
+    structured_x = agent_output.get("x", {}) if isinstance(agent_output.get("x"), dict) else {}
+    if structured_x:
+        lines = _dedupe_non_empty_lines(structured_x.get("post", []), limit=3)
+        text_parts = lines or [story.get("title", "Sem título"), story.get("link", "")]
+        mode = "article_reader_copy"
+        message = "Structured X output from the latest two-agent per-story run."
+    else:
+        lines = _dedupe_non_empty_lines(
+            [
+                story.get("title", ""),
+                analysis_data.get("why_it_matters", ""),
+                story.get("summary", ""),
+            ],
+            limit=3,
+        )
+        text_parts = [
+            lines[0] if lines else story.get("title", "Sem título"),
+            lines[1] if len(lines) > 1 else "",
+            story.get("link", ""),
+        ]
+        mode = "planner_slot" if any(tag.startswith("X Thread") for tag in planner_tags) else "manual_story_draft"
+        message = (
+            "This story is already used in an X slot in the latest plan."
+            if any(tag.startswith("X Thread") for tag in planner_tags)
+            else "Manual X draft built from the selected story."
+        )
     return {
         "platform": "x",
         "label": WORKSPACE_PLATFORM_LABELS["x"],
-        "mode": "planner_slot" if any(tag.startswith("X Thread") for tag in planner_tags) else "manual_story_draft",
+        "mode": mode,
         "message": message,
         "source_link": story.get("link", ""),
         "text": "\n".join(part for part in text_parts if part).strip(),
@@ -1113,106 +1189,159 @@ def _build_x_workspace_output(story: dict, agent_output: dict, planner_tags: lis
 def _build_youtube_workspace_output(story: dict, agent_output: dict, planner_tags: list[str]) -> dict:
     story = normalize_story(story)
     agent_output = _normalize_output(agent_output)
+    structured_youtube = agent_output.get("youtube", {}) if isinstance(agent_output.get("youtube"), dict) else {}
     analysis_data = _parse_analysis_data(agent_output)
-    hook = _compact_text(
-        analysis_data.get("headline_hook") or story.get("title", ""),
-        90,
-    )
-    description_lines = _dedupe_non_empty_lines(
-        [
-            story.get("summary", ""),
-            analysis_data.get("why_it_matters", ""),
-            f"Fonte: {story.get('source', 'Fonte desconhecida')}",
-        ],
-        limit=3,
-    )
-    description_parts = [story.get("title", "Sem título"), *description_lines]
-    if story.get("link"):
-        description_parts.append(story.get("link", ""))
-    return {
-        "platform": "youtube",
-        "label": WORKSPACE_PLATFORM_LABELS["youtube"],
-        "mode": "voice_ready" if agent_output.get("voice_script") else "manual_story_draft",
-        "message": (
+    if structured_youtube:
+        description_lines = _dedupe_non_empty_lines(structured_youtube.get("description", []), limit=3)
+        voice_lines = _dedupe_non_empty_lines(structured_youtube.get("voice_script", []), limit=3)
+        description_parts = [
+            _compact_text(structured_youtube.get("title") or story.get("title", "Sem título"), 90),
+            *description_lines,
+        ]
+        if story.get("link"):
+            description_parts.append(story.get("link", ""))
+        mode = "voice_ready" if voice_lines else "article_reader_copy"
+        message = "Structured YouTube output from the latest two-agent per-story run."
+        title = _compact_text(structured_youtube.get("title") or story.get("title", ""), 90)
+        hook = _compact_text(structured_youtube.get("hook") or (description_lines[0] if description_lines else story.get("title", "")), 90)
+        voice_script = "\n".join(voice_lines).strip()
+    else:
+        hook = _compact_text(
+            analysis_data.get("headline_hook") or story.get("title", ""),
+            90,
+        )
+        description_lines = _dedupe_non_empty_lines(
+            [
+                *_normalized_story_summary_lines(story, agent_output, limit=3),
+                analysis_data.get("why_it_matters", ""),
+            ],
+            limit=3,
+        )
+        description_parts = [story.get("title", "Sem título"), *description_lines]
+        if story.get("link"):
+            description_parts.append(story.get("link", ""))
+        mode = "voice_ready" if agent_output.get("voice_script") else "manual_story_draft"
+        message = (
             "Voice script available from the latest article-level agent run."
             if agent_output.get("voice_script")
             else "YouTube workspace draft built from story metadata."
-        ),
+        )
+        title = _compact_text(story.get("title", ""), 90)
+        voice_script = agent_output.get("voice_script", "")
+    return {
+        "platform": "youtube",
+        "label": WORKSPACE_PLATFORM_LABELS["youtube"],
+        "mode": mode,
+        "message": message,
         "source_link": story.get("link", ""),
-        "title": _compact_text(story.get("title", ""), 90),
+        "title": title,
         "hook": hook,
         "description": "\n".join(part for part in description_parts if part).strip(),
-        "voice_script": agent_output.get("voice_script", ""),
+        "voice_script": voice_script,
     }
 
 
-def _build_reddit_workspace_output(story: dict, planner_tags: list[str]) -> dict:
+def _build_reddit_workspace_output(story: dict, agent_output: dict, planner_tags: list[str]) -> dict:
     story = normalize_story(story)
-    body_lines = _dedupe_non_empty_lines(
-        [
-            story.get("summary", ""),
-            f"Fonte: {story.get('source', 'Fonte desconhecida')}",
-        ],
-        limit=3,
-    )
-    if story.get("link"):
-        body_lines.append(story.get("link", ""))
-    return {
-        "platform": "reddit",
-        "label": WORKSPACE_PLATFORM_LABELS["reddit"],
-        "mode": "planner_candidate" if "Reddit Candidate" in planner_tags else "manual_story_draft",
-        "message": (
+    agent_output = _normalize_output(agent_output)
+    structured_reddit = agent_output.get("reddit", {}) if isinstance(agent_output.get("reddit"), dict) else {}
+    if structured_reddit:
+        body_lines = _dedupe_non_empty_lines(
+            [*structured_reddit.get("body", []), story.get("link", "")],
+            limit=4,
+        )
+        title = _compact_text(structured_reddit.get("title") or story.get("title", ""), 90)
+        mode = "article_reader_copy"
+        message = "Structured Reddit output from the latest two-agent per-story run."
+    else:
+        body_lines = _dedupe_non_empty_lines(
+            [
+                *_normalized_story_summary_lines(story, agent_output, limit=3),
+                story.get("link", ""),
+            ],
+            limit=4,
+        )
+        title = _compact_text(story.get("title", ""), 90)
+        mode = "planner_candidate" if "Reddit Candidate" in planner_tags else "manual_story_draft"
+        message = (
             "This story is already shortlisted as a Reddit candidate."
             if "Reddit Candidate" in planner_tags
             else "Reddit draft built from the selected story."
-        ),
+        )
+    return {
+        "platform": "reddit",
+        "label": WORKSPACE_PLATFORM_LABELS["reddit"],
+        "mode": mode,
+        "message": message,
         "source_link": story.get("link", ""),
-        "title": _compact_text(story.get("title", ""), 90),
+        "title": title,
         "body": "\n\n".join(line for line in body_lines if line).strip(),
     }
 
 
-def _build_discord_workspace_output(story: dict, planner_tags: list[str]) -> dict:
+def _build_discord_workspace_output(story: dict, agent_output: dict, planner_tags: list[str]) -> dict:
     story = normalize_story(story)
-    text_parts = _dedupe_non_empty_lines(
-        [
-            story.get("title", ""),
-            story.get("summary", ""),
-            story.get("link", ""),
-        ],
-        limit=3,
-    )
-    return {
-        "platform": "discord",
-        "label": WORKSPACE_PLATFORM_LABELS["discord"],
-        "mode": "planner_slot" if "Discord Post" in planner_tags else "manual_story_draft",
-        "message": (
+    agent_output = _normalize_output(agent_output)
+    structured_discord = agent_output.get("discord", {}) if isinstance(agent_output.get("discord"), dict) else {}
+    if structured_discord:
+        text_parts = _dedupe_non_empty_lines(structured_discord.get("post", []), limit=3)
+        mode = "article_reader_copy"
+        message = "Structured Discord output from the latest two-agent per-story run."
+    else:
+        text_parts = _dedupe_non_empty_lines(
+            [
+                story.get("title", ""),
+                *_normalized_story_summary_lines(story, agent_output, limit=2),
+                story.get("link", ""),
+            ],
+            limit=3,
+        )
+        mode = "planner_slot" if "Discord Post" in planner_tags else "manual_story_draft"
+        message = (
             "This story is already the active Discord slot in the latest plan."
             if "Discord Post" in planner_tags
             else "Discord draft built from the selected story."
-        ),
+        )
+    return {
+        "platform": "discord",
+        "label": WORKSPACE_PLATFORM_LABELS["discord"],
+        "mode": mode,
+        "message": message,
         "source_link": story.get("link", ""),
         "text": "\n".join(text_parts).strip(),
     }
 
 
-def _build_email_workspace_output(story: dict) -> dict:
+def _build_email_workspace_output(story: dict, agent_output: dict) -> dict:
     story = normalize_story(story)
-    body_lines = _dedupe_non_empty_lines(
-        [
-            story.get("summary", ""),
-            f"Fonte: {story.get('source', 'Fonte desconhecida')}",
-            story.get("link", ""),
-        ],
-        limit=4,
-    )
+    agent_output = _normalize_output(agent_output)
+    structured_email = agent_output.get("email", {}) if isinstance(agent_output.get("email"), dict) else {}
+    if structured_email:
+        body_lines = _dedupe_non_empty_lines(
+            [*structured_email.get("body", []), structured_email.get("link") or story.get("link", "")],
+            limit=4,
+        )
+        subject = _compact_text(structured_email.get("subject") or story.get("title", ""), 100)
+        mode = "article_reader_copy"
+        message = "Structured email block from the latest two-agent per-story run."
+    else:
+        body_lines = _dedupe_non_empty_lines(
+            [
+                *_normalized_story_summary_lines(story, agent_output, limit=3),
+                story.get("link", ""),
+            ],
+            limit=4,
+        )
+        subject = _compact_text(story.get("title", ""), 100)
+        mode = "story_ready"
+        message = "Short email-ready block built from the selected story."
     return {
         "platform": "email",
         "label": WORKSPACE_PLATFORM_LABELS["email"],
-        "mode": "story_ready",
-        "message": "Short email-ready block built from the selected story.",
+        "mode": mode,
+        "message": message,
         "source_link": story.get("link", ""),
-        "subject": _compact_text(story.get("title", ""), 100),
+        "subject": subject,
         "body": "\n".join(line for line in body_lines if line).strip(),
     }
 
@@ -1244,15 +1373,16 @@ def build_story_workspace_items(snapshot: dict | None = None, overrides: dict | 
             "instagram": _build_instagram_workspace_output(story, agent_output),
             "x": _build_x_workspace_output(story, agent_output, planner_tags),
             "youtube": _build_youtube_workspace_output(story, agent_output, planner_tags),
-            "reddit": _build_reddit_workspace_output(story, planner_tags),
-            "discord": _build_discord_workspace_output(story, planner_tags),
-            "email": _build_email_workspace_output(story),
+            "reddit": _build_reddit_workspace_output(story, agent_output, planner_tags),
+            "discord": _build_discord_workspace_output(story, agent_output, planner_tags),
+            "email": _build_email_workspace_output(story, agent_output),
         }
+        article_summary_lines = _normalized_story_summary_lines(story, agent_output, limit=3)
 
         items.append({
             "key": key,
             "story": story,
-            "summary_snippet": _compact_text(story.get("summary", ""), 180),
+            "summary_snippet": _compact_text(" ".join(article_summary_lines) or story.get("summary", ""), 180),
             "planner_tags": planner_tags,
             "recommended_platforms": _suggest_platforms(planner_tags),
             "available_platforms": list(WORKSPACE_PLATFORMS),
