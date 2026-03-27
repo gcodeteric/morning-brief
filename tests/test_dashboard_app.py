@@ -182,6 +182,18 @@ with mock.patch.object(dashboard_app, "load_dashboard_context", return_value=con
         markdown_values = [node.value for node in at.markdown]
         self.assertTrue(any("No story workspace available" in value for value in markdown_values))
 
+    def test_advanced_system_renders_without_duplicate_widget_errors(self):
+        context = make_context()
+        context["brief"] = {"path": "", "folder": "", "exists": False, "content": ""}
+        context["runtime"]["paths"] = {"brief_folder": "", "cards_folder": "", "overrides": ""}
+        context["paths"] = {"brief_folder": "", "cards_folder": "", "overrides": ""}
+
+        at = self._run_app(context, nav="Advanced / System")
+
+        self.assertEqual(len(at.exception), 0)
+        markdown_values = [node.value for node in at.markdown]
+        self.assertTrue(any("Persistence model" in value for value in markdown_values))
+
 
 if __name__ == "__main__":
     unittest.main()

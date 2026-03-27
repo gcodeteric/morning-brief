@@ -879,10 +879,10 @@ def _render_override_controls(context: dict):
 
     actions = st.columns(3)
     with actions[0]:
-        if st.button("Save Overrides", use_container_width=True, type="primary"):
+        if st.button("Save Overrides", key="advanced_save_overrides", use_container_width=True, type="primary"):
             _save_overrides_feedback()
     with actions[1]:
-        if st.button("Reset Overrides", use_container_width=True):
+        if st.button("Reset Overrides", key="advanced_reset_overrides", use_container_width=True):
             ok, message = reset_current_overrides()
             if ok:
                 st.session_state["dashboard_override_draft"] = {field: 0 for field in SUPPORTED_OVERRIDE_FIELDS}
@@ -890,7 +890,7 @@ def _render_override_controls(context: dict):
             else:
                 st.error(message)
     with actions[2]:
-        if st.button("Open Overrides File", use_container_width=True):
+        if st.button("Open Overrides File", key="advanced_open_overrides_from_overrides_tab", use_container_width=True):
             _open_path_feedback(ensure_overrides_file())
 
     if not plan:
@@ -932,16 +932,16 @@ def _render_brief_and_files(context: dict):
 
     actions = st.columns(4)
     with actions[0]:
-        if st.button("Open Brief File", use_container_width=True):
+        if st.button("Open Brief File", key="advanced_open_brief_file", use_container_width=True):
             _open_path_feedback(brief.get("path", ""))
     with actions[1]:
-        if st.button("Open Brief Folder", use_container_width=True):
+        if st.button("Open Brief Folder", key="advanced_open_brief_folder", use_container_width=True):
             _open_path_feedback(brief.get("folder", ""))
     with actions[2]:
-        if st.button("Open Cards Folder", use_container_width=True):
+        if st.button("Open Cards Folder", key="advanced_open_cards_folder", use_container_width=True):
             _open_path_feedback(paths.get("cards_folder", ""))
     with actions[3]:
-        if st.button("Open Overrides File", use_container_width=True):
+        if st.button("Open Overrides File", key="advanced_open_overrides_from_files_tab", use_container_width=True):
             _open_path_feedback(ensure_overrides_file())
 
     st.download_button(
