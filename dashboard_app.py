@@ -46,6 +46,22 @@ NAV_ITEMS = [
     "Advanced / System",
 ]
 
+SEARCH_SCOPE_OPTIONS = (
+    "Title + source",
+    "Title only",
+    "Source only",
+)
+
+SORT_OPTIONS = (
+    "Score ↓",
+    "Score ↑",
+    "Title A-Z",
+    "Source A-Z",
+    "Category A-Z",
+)
+
+DISPLAY_COUNT_OPTIONS = ("24", "48", "96", "All")
+
 
 def _safe_list(value):
     return value if isinstance(value, list) else []
@@ -86,6 +102,113 @@ def _default_story_platforms(item: dict) -> list[str]:
     return defaults or ["instagram", "x", "email"]
 
 
+def _is_recommended_story(item: dict) -> bool:
+    item = item or {}
+    return bool(item.get("in_active_plan"))
+
+
+def _display_limit(option: str) -> int | None:
+    return None if option == "All" else int(option)
+
+
+def _story_search_haystack(item: dict, scope: str = "Title + source") -> str:
+    item = item or {}
+    story = _safe_dict(item.get("story", {}))
+    title = story.get("title", "")
+    source = story.get("source", "")
+    summary = story.get("summary", "")
+    tags = " ".join(_safe_list(item.get("planner_tags", [])))
+    if scope == "Title only":
+        parts = [title]
+    elif scope == "Source only":
+        parts = [source]
+    else:
+        parts = [title, source, summary, tags]
+    return " ".join(str(part or "") for part in parts).lower()
+
+
+def _filter_sort_workspace_items(
+    items: list[dict],
+    *,
+    category_filter=None,
+    source_filter=None,
+    min_score: int = 0,
+    search_text: str = "",
+    search_scope: str = "Title + source",
+    recommended_only: bool = False,
+    system_only: bool = False,
+    digest_only: bool = False,
+    sort_option: str = "Score ↓",
+) -> list[dict]:
+    category_filter = category_filter or []
+    source_filter = source_filter or []
+    search_lower = (search_text or "").lower().strip()
+    filtered = []
+
+    for item in items or []:
+        story = _safe_dict(item.get("story", {}))
+        if category_filter and story.get("category", "unknown") not in category_filter:
+            continue
+        if source_filter and story.get("source", "Fonte desconhecida") not in source_filter:
+            continue
+        if int(story.get("score", 0) or 0) < min_score:
+            continue
+        if recommended_only and not _is_recommended_story(item):
+            continue
+        if system_only and not item.get("selected_by_system"):
+            continue
+        if digest_only and not item.get("in_current_digest"):
+            continue
+        if search_lower and search_lower not in _story_search_haystack(item, search_scope):
+            continue
+        filtered.append(item)
+
+    if sort_option == "Score ↑":
+        filtered.sort(key=lambda item: (int(_safe_dict(item.get("story", {})).get("score", 0) or 0), _safe_dict(item.get("story", {})).get("title", "").lower()))
+    elif sort_option == "Title A-Z":
+        filtered.sort(key=lambda item: _safe_dict(item.get("story", {})).get("title", "").lower())
+    elif sort_option == "Source A-Z":
+        filtered.sort(key=lambda item: _safe_dict(item.get("story", {})).get("source", "").lower())
+    elif sort_option == "Category A-Z":
+        filtered.sort(key=lambda item: (_safe_dict(item.get("story", {})).get("category", "").lower(), -int(_safe_dict(item.get("story", {})).get("score", 0) or 0)))
+    else:
+        filtered.sort(key=lambda item: (-int(_safe_dict(item.get("story", {})).get("score", 0) or 0), _safe_dict(item.get("story", {})).get("title", "").lower()))
+
+    return filtered
+
+
+def _story_badges(item: dict) -> list[tuple[str, str]]:
+    item = item or {}
+    story = _safe_dict(item.get("story", {}))
+    score = int(story.get("score", 0) or 0)
+    category = story.get("category", "unknown")
+    planner_tags = _safe_list(item.get("planner_tags", []))
+
+    badges: list[tuple[str, str]] = []
+    if _is_recommended_story(item):
+        badges.append(("Recommended", "ok"))
+    if item.get("selected_by_system"):
+        badges.append(("System picked", "info"))
+    if any("Morning Digest" in tag for tag in planner_tags):
+        badges.append(("Morning Digest", "warn"))
+    if any("Afternoon Digest" in tag for tag in planner_tags):
+        badges.append(("Afternoon Digest", "info"))
+    if score >= 70:
+        badges.append(("High Score", "ok"))
+
+    category_labels = {
+        "sim_racing": "Sim Racing",
+        "motorsport": "Motorsport",
+        "nostalgia": "Nostalgia",
+        "racing_games": "Racing Games",
+        "portugal": "PT",
+    }
+    label = category_labels.get(category)
+    if label:
+        badges.append((label, "muted"))
+    return badges
+
+
 def _selected_story_keys(context: dict) -> list[str]:
     available = set(_workspace_lookup(context))
     current = _safe_list(st.session_state.get("dashboard_selected_story_keys", []))
@@ -98,6 +221,18 @@ def _selected_story_keys(context: dict) -> list[str]:
 def _selected_story_items(context: dict) -> list[dict]:
     lookup = _workspace_lookup(context)
     return [lookup[key] for key in _selected_story_keys(context) if key in lookup]
+
+
+def _collect_story_links(items: list[dict]) -> str:
+    links = []
+    seen = set()
+    for item in items or []:
+        link = str(_safe_dict(item.get("story", {})).get("link", "") or "").strip()
+        if not link or link in seen:
+            continue
+        seen.add(link)
+        links.append(link)
+    return "\n".join(links)
 
 
 def _get_story_platforms(item: dict) -> list[str]:
@@ -117,6 +252,44 @@ def _set_story_platforms(story_key: str, platforms) -> list[str]:
     mapping[story_key] = current
     st.session_state["dashboard_story_platforms"] = mapping
     return current
+
+
+def _select_multiple_stories(items: list[dict]) -> int:
+    current = list(st.session_state.get("dashboard_selected_story_keys", []))
+    mapping = dict(st.session_state.get("dashboard_story_platforms", {}))
+    added = 0
+
+    for item in items or []:
+        story_key = _story_key(item)
+        if not story_key:
+            continue
+        if story_key not in current:
+            current.append(story_key)
+            added += 1
+        mapping[story_key] = _sanitize_platforms(mapping.get(story_key) or _default_story_platforms(item))
+
+    if items:
+        st.session_state["dashboard_active_story_key"] = _story_key(items[0])
+    st.session_state["dashboard_selected_story_keys"] = current
+    st.session_state["dashboard_story_platforms"] = mapping
+    return added
+
+
+def _apply_platform_choice_to_selected(items: list[dict], mode: str = "recommended") -> int:
+    mapping = dict(st.session_state.get("dashboard_story_platforms", {}))
+    changed = 0
+    for item in items or []:
+        story_key = _story_key(item)
+        if not story_key:
+            continue
+        values = _default_story_platforms(item) if mode == "recommended" else list(WORKSPACE_PLATFORMS)
+        if _sanitize_platforms(mapping.get(story_key, [])) != values:
+            changed += 1
+        mapping[story_key] = values
+        widget_key = _widget_key("story_platforms", story_key)
+        st.session_state[widget_key] = values
+    st.session_state["dashboard_story_platforms"] = mapping
+    return changed
 
 
 def _select_story(item: dict):
@@ -212,6 +385,9 @@ def _open_path_feedback(path_like):
 
 def _copy_button(label: str, text: str, key: str, primary: bool = False, slot_key: str | None = None):
     if st.button(label, key=key, use_container_width=True, type="primary" if primary else "secondary"):
+        if not str(text or "").strip():
+            st.warning("There is no usable text in this block yet.")
+            return
         slot = slot_key or key
         set_copy_buffer(text or "", label, slot)
         st.toast(f"{label} pronto para copiar")
@@ -260,12 +436,10 @@ def _render_story_summary(story: dict, selected: bool = False):
 
 def _render_story_context(item: dict):
     planner_tags = _safe_list(item.get("planner_tags", []))
-    if item.get("selected_by_system"):
-        render_status_pill("System picked", "info")
-    if item.get("in_current_digest"):
-        render_status_pill("In current digest", "ok")
-    elif planner_tags:
-        render_status_pill("In today’s plan", "ok")
+    badges = _story_badges(item)
+    if badges:
+        for label, tone in badges:
+            render_status_pill(label, tone)
     else:
         render_status_pill("Manual pool", "muted")
 
@@ -344,70 +518,75 @@ def _render_news_feed(context: dict):
         render_section_header("Filters", "These are operator-controlled filters only. The dashboard keeps the broader rated story pool visible by default.", level=3)
         categories = sorted({item.get("story", {}).get("category", "unknown") for item in items})
         sources = sorted({item.get("story", {}).get("source", "Fonte desconhecida") for item in items})
-        top_filters = st.columns([1.15, 1.15, 0.85, 1.25, 1.25])
+        top_filters = st.columns([1.05, 1.05, 0.8, 1.2, 1.1, 0.8])
         category_filter = top_filters[0].multiselect("Category", categories)
         source_filter = top_filters[1].multiselect("Source", sources)
         min_score = top_filters[2].slider("Min score", min_value=0, max_value=100, value=0)
         search_text = top_filters[3].text_input("Search")
         sort_option = top_filters[4].selectbox(
             "Sort by",
-            [
-                "Score ↓",
-                "Score ↑",
-                "Title A-Z",
-                "Source A-Z",
-                "Category A-Z",
-            ],
+            list(SORT_OPTIONS),
         )
-        bottom_filters = st.columns([1, 1, 1])
-        planned_only = bottom_filters[0].toggle("In plan only", value=False)
-        system_only = bottom_filters[1].toggle("System-picked only", value=False)
-        digest_only = bottom_filters[2].toggle("In current digest only", value=False)
+        display_limit_option = top_filters[5].selectbox("Show", list(DISPLAY_COUNT_OPTIONS), index=1)
+        bottom_filters = st.columns([1, 1, 1, 1])
+        search_scope = bottom_filters[0].selectbox("Search in", list(SEARCH_SCOPE_OPTIONS), index=0)
+        recommended_only = bottom_filters[1].toggle("Recommended only", value=False)
+        system_only = bottom_filters[2].toggle("System-picked only", value=False)
+        digest_only = bottom_filters[3].toggle("In current digest only", value=False)
 
-    filtered = []
-    search_lower = search_text.lower().strip()
-    for item in items:
-        story = _safe_dict(item.get("story", {}))
-        if category_filter and story.get("category", "unknown") not in category_filter:
-            continue
-        if source_filter and story.get("source", "Fonte desconhecida") not in source_filter:
-            continue
-        if int(story.get("score", 0) or 0) < min_score:
-            continue
-        if planned_only and not item.get("in_active_plan"):
-            continue
-        if system_only and not item.get("selected_by_system"):
-            continue
-        if digest_only and not item.get("in_current_digest"):
-            continue
-        haystack = " ".join([
-            story.get("title", ""),
-            story.get("summary", ""),
-            story.get("source", ""),
-            " ".join(_safe_list(item.get("planner_tags", []))),
-        ]).lower()
-        if search_lower and search_lower not in haystack:
-            continue
-        filtered.append(item)
+    filtered = _filter_sort_workspace_items(
+        items,
+        category_filter=category_filter,
+        source_filter=source_filter,
+        min_score=min_score,
+        search_text=search_text,
+        search_scope=search_scope,
+        recommended_only=recommended_only,
+        system_only=system_only,
+        digest_only=digest_only,
+        sort_option=sort_option,
+    )
+    total_matches = len(filtered)
+    limit = _display_limit(display_limit_option)
+    visible_items = filtered[:limit] if limit else filtered
 
-    if sort_option == "Score ↑":
-        filtered.sort(key=lambda item: (int(_safe_dict(item.get("story", {})).get("score", 0) or 0), _safe_dict(item.get("story", {})).get("title", "").lower()))
-    elif sort_option == "Title A-Z":
-        filtered.sort(key=lambda item: _safe_dict(item.get("story", {})).get("title", "").lower())
-    elif sort_option == "Source A-Z":
-        filtered.sort(key=lambda item: _safe_dict(item.get("story", {})).get("source", "").lower())
-    elif sort_option == "Category A-Z":
-        filtered.sort(key=lambda item: (_safe_dict(item.get("story", {})).get("category", "").lower(), -int(_safe_dict(item.get("story", {})).get("score", 0) or 0)))
-    else:
-        filtered.sort(key=lambda item: (-int(_safe_dict(item.get("story", {})).get("score", 0) or 0), _safe_dict(item.get("story", {})).get("title", "").lower()))
+    with card_container(soft=True):
+        render_section_header(
+            "Selection tools",
+            f"{len(visible_items)} shown • {total_matches} matching • {len(selected_keys)} selected in this session.",
+            level=3,
+        )
+        st.caption("Story selection is session-only. The latest snapshot and brief stay unchanged until you run the pipeline again.")
+        action_row = st.columns(5)
+        with action_row[0]:
+            if st.button("Select All Visible", key="newsfeed_select_all_visible", use_container_width=True, type="primary"):
+                added = _select_multiple_stories(visible_items)
+                st.toast(f"{added} stories added to the workspace" if added else "All visible stories were already selected")
+                st.rerun()
+        with action_row[1]:
+            if st.button("Select Recommended", key="newsfeed_select_recommended", use_container_width=True):
+                recommended_items = [item for item in visible_items if _is_recommended_story(item)]
+                added = _select_multiple_stories(recommended_items)
+                st.toast(f"{added} recommended stories added" if added else "No new recommended stories were added")
+                st.rerun()
+        with action_row[2]:
+            if st.button("Clear Selection", key="newsfeed_clear_selection", use_container_width=True):
+                _clear_story_selection()
+                st.rerun()
+        with action_row[3]:
+            if st.button("Open Selected News", key="newsfeed_open_selected_news", use_container_width=True):
+                _set_navigation("Selected News")
+        with action_row[4]:
+            if st.button("Open Platform Outputs", key="newsfeed_open_platform_outputs", use_container_width=True):
+                _set_navigation("Platform Outputs")
 
-    render_section_header("Stories", f"{len(filtered)} stories ready for manual selection.")
-    if not filtered:
+    render_section_header("Stories", f"{len(visible_items)} stories ready for manual selection.")
+    if not visible_items:
         render_empty_state("No stories match these filters", "Relax the current filters or load today’s planned stories into the workspace.")
         return
 
     columns = st.columns(2, gap="large")
-    for idx, item in enumerate(filtered):
+    for idx, item in enumerate(visible_items):
         story = _safe_dict(item.get("story", {}))
         story_key = _story_key(item)
         selected = story_key in selected_keys
@@ -471,6 +650,28 @@ def _render_selected_news(context: dict):
             "Pick stories in News Feed first, or pull in the stories already used by today’s plan.",
         )
         return
+
+    with card_container(soft=True):
+        render_section_header("Bulk actions", f"{len(items)} selected stories ready for platform setup.", level=3)
+        bulk_actions = st.columns(3)
+        with bulk_actions[0]:
+            if st.button("Use Recommended for All", key="selected_use_recommended_all", use_container_width=True):
+                changed = _apply_platform_choice_to_selected(items, mode="recommended")
+                st.toast(f"Recommended platforms applied to {changed} stories" if changed else "Recommended platforms were already in place")
+                st.rerun()
+        with bulk_actions[1]:
+            if st.button("Use All Platforms for All", key="selected_use_all_platforms", use_container_width=True):
+                changed = _apply_platform_choice_to_selected(items, mode="all")
+                st.toast(f"All platforms applied to {changed} stories" if changed else "All selected stories already used every platform")
+                st.rerun()
+        with bulk_actions[2]:
+            _copy_button(
+                "Copy All Selected Links",
+                _collect_story_links(items),
+                "selected_copy_all_links",
+                slot_key="selected_copy_all_links_slot",
+            )
+        render_copy_buffer("selected_copy_all_links_slot")
 
     render_section_header("Selected Stories", f"{len(items)} story cards ready for platform choices.")
     for item in items:
@@ -750,7 +951,7 @@ def _render_platform_outputs(context: dict):
         )
         return
 
-    toolbar = st.columns([1.25, 1.15, 0.9, 0.9])
+    toolbar = st.columns([1.2, 1.1, 1.0, 0.9, 0.9])
     platform_filter = toolbar[0].multiselect(
         "Show platforms",
         list(WORKSPACE_PLATFORMS),
@@ -760,12 +961,20 @@ def _render_platform_outputs(context: dict):
     story_options = ["All selected stories"] + [item.get("story", {}).get("title", "Sem título") for item in items]
     focused_story = toolbar[1].selectbox("Focus", story_options, index=0)
     with toolbar[2]:
+        _copy_button(
+            "Copy All Selected Links",
+            _collect_story_links(items),
+            "outputs_copy_all_links",
+            slot_key="outputs_copy_all_links_slot",
+        )
+    with toolbar[3]:
         if st.button("Back to Selected News", use_container_width=True):
             _set_navigation("Selected News")
-    with toolbar[3]:
+    with toolbar[4]:
         if st.button("Clear Selection", use_container_width=True):
             _clear_story_selection()
             st.rerun()
+    render_copy_buffer("outputs_copy_all_links_slot")
 
     for idx, item in enumerate(items):
         story = _safe_dict(item.get("story", {}))

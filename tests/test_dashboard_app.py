@@ -1,27 +1,47 @@
 import json
 import unittest
 
+import dashboard_app
 from streamlit.testing.v1 import AppTest
 
 
-def make_story(title="Story One", link="https://example.com/story"):
+def make_story(
+    title="Story One",
+    link="https://example.com/story",
+    *,
+    source="Source",
+    category="sim_racing",
+    score=88,
+):
     return {
         "title": title,
-        "source": "Source",
-        "category": "sim_racing",
+        "source": source,
+        "category": category,
         "summary": f"Summary for {title}",
-        "score": 88,
+        "score": score,
         "link": link,
     }
 
 
-def make_workspace_item(title="Story One", link="https://example.com/story"):
-    story = make_story(title=title, link=link)
+def make_workspace_item(
+    title="Story One",
+    link="https://example.com/story",
+    *,
+    source="Source",
+    category="sim_racing",
+    score=88,
+    planner_tags=None,
+    recommended_platforms=None,
+    in_active_plan=True,
+    selected_by_system=False,
+    in_current_digest=False,
+):
+    story = make_story(title=title, link=link, source=source, category=category, score=score)
     return {
         "key": link,
         "story": story,
-        "planner_tags": ["Morning Digest", "X Thread 1"],
-        "recommended_platforms": ["instagram", "x", "email"],
+        "planner_tags": planner_tags if planner_tags is not None else ["Morning Digest", "X Thread 1"],
+        "recommended_platforms": recommended_platforms if recommended_platforms is not None else ["instagram", "x", "email"],
         "available_platforms": ["instagram", "x", "youtube", "reddit", "discord", "email"],
         "platform_outputs": {
             "instagram": {
@@ -63,7 +83,9 @@ def make_workspace_item(title="Story One", link="https://example.com/story"):
             },
         },
         "agent_output": {},
-        "in_active_plan": True,
+        "in_active_plan": in_active_plan,
+        "selected_by_system": selected_by_system,
+        "in_current_digest": in_current_digest,
     }
 
 
@@ -133,6 +155,67 @@ with mock.patch.object(dashboard_app, "load_dashboard_context", return_value=con
                 return button
         self.fail(f"Button not found: {label}")
 
+    def test_filter_sort_workspace_items_supports_search_scope_recommended_and_sorting(self):
+        items = [
+            make_workspace_item(
+                title="GT7 Patch Notes",
+                link="https://example.com/gt7",
+                source="PlayStation Blog",
+                score=72,
+                in_active_plan=False,
+                planner_tags=[],
+            ),
+            make_workspace_item(
+                title="Endurance Update",
+                link="https://example.com/endurance",
+                source="PT Sim Hub",
+                score=91,
+                in_active_plan=True,
+                selected_by_system=True,
+                in_current_digest=True,
+            ),
+            make_workspace_item(
+                title="Archive Item",
+                link="https://example.com/archive",
+                source="Archive Source",
+                score=25,
+                in_active_plan=True,
+            ),
+        ]
+
+        filtered = dashboard_app._filter_sort_workspace_items(
+            items,
+            source_filter=["PT Sim Hub"],
+            min_score=50,
+            search_text="PT Sim",
+            search_scope="Source only",
+            recommended_only=True,
+            system_only=True,
+            digest_only=True,
+            sort_option="Score ↓",
+        )
+        self.assertEqual([item["key"] for item in filtered], ["https://example.com/endurance"])
+
+        title_filtered = dashboard_app._filter_sort_workspace_items(
+            items,
+            search_text="GT7",
+            search_scope="Title only",
+            sort_option="Title A-Z",
+        )
+        self.assertEqual([item["key"] for item in title_filtered], ["https://example.com/gt7"])
+
+    def test_collect_story_links_deduplicates_and_preserves_order(self):
+        items = [
+            make_workspace_item(title="One", link="https://example.com/one"),
+            make_workspace_item(title="Duplicate", link="https://example.com/one"),
+            make_workspace_item(title="Two", link="https://example.com/two"),
+        ]
+
+        self.assertEqual(
+            dashboard_app._collect_story_links(items),
+            "https://example.com/one\nhttps://example.com/two",
+        )
+
     def test_news_feed_allows_story_selection(self):
         context = make_context()
 
@@ -144,6 +227,47 @@ with mock.patch.object(dashboard_app, "load_dashboard_context", return_value=con
         self.assertIn("https://example.com/story", at.session_state["dashboard_selected_story_keys"])
         labels = [button.label for button in at.button]
         self.assertIn("Deselect", labels)
+
+    def test_news_feed_select_all_visible_adds_multiple_stories(self):
+        stories = [
+            make_workspace_item(title="Story One", link="https://example.com/story-one", score=96),
+            make_workspace_item(title="Story Two", link="https://example.com/story-two", score=84, in_active_plan=False),
+            make_workspace_item(title="Story Three", link="https://example.com/story-three", score=73),
+        ]
+        context = make_context(story_workspace=stories, selection_seed=[])
+
+        at = self._run_app(context, nav="News Feed", selected=[], platforms={})
+        self.assertEqual(len(at.exception), 0)
+
+        self._button_by_label(at, "Select All Visible").click().run()
+
+        self.assertEqual(
+            at.session_state["dashboard_selected_story_keys"],
+            [
+                "https://example.com/story-one",
+                "https://example.com/story-two",
+                "https://example.com/story-three",
+            ],
+        )
+
+    def test_selected_news_bulk_actions_render_for_multi_story_selection(self):
+        stories = [
+            make_workspace_item(title="Story One", link="https://example.com/story-one"),
+            make_workspace_item(title="Story Two", link="https://example.com/story-two", in_active_plan=False),
+        ]
+        context = make_context(story_workspace=stories, selection_seed=[])
+        at = self._run_app(
+            context,
+            nav="Selected News",
+            selected=["https://example.com/story-one", "https://example.com/story-two"],
+            platforms={},
+        )
+
+        self.assertEqual(len(at.exception), 0)
+        labels = [button.label for button in at.button]
+        self.assertIn("Use Recommended for All", labels)
+        self.assertIn("Use All Platforms for All", labels)
+        self.assertIn("Copy All Selected Links", labels)
 
     def test_platform_outputs_render_selected_story_outputs(self):
         context = make_context()
@@ -165,6 +289,26 @@ with mock.patch.object(dashboard_app, "load_dashboard_context", return_value=con
         self.assertIn("Story One\nCaption line 1\nCaption line 2\nhttps://example.com/story", code_values)
         self.assertIn("X draft for Story One\nhttps://example.com/story", code_values)
         self.assertIn("Email body for Story One\nhttps://example.com/story", code_values)
+
+    def test_platform_outputs_show_bulk_link_copy_action(self):
+        stories = [
+            make_workspace_item(title="Story One", link="https://example.com/story-one"),
+            make_workspace_item(title="Story Two", link="https://example.com/story-two"),
+        ]
+        context = make_context(story_workspace=stories, selection_seed=[])
+        at = self._run_app(
+            context,
+            nav="Platform Outputs",
+            selected=["https://example.com/story-one", "https://example.com/story-two"],
+            platforms={
+                "https://example.com/story-one": ["instagram"],
+                "https://example.com/story-two": ["x"],
+            },
+        )
+
+        self.assertEqual(len(at.exception), 0)
+        labels = [button.label for button in at.button]
+        self.assertIn("Copy All Selected Links", labels)
 
     def test_platform_outputs_with_zero_selected_stories_do_not_crash(self):
         context = make_context()
