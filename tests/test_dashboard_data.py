@@ -186,6 +186,106 @@ class DashboardDataTests(unittest.TestCase):
         self.assertIn("Instagram Morning Digest (variant 0):", summary)
         self.assertIn("Morning Primary", summary)
 
+    def test_story_workspace_builds_per_story_platform_outputs(self):
+        story = make_story("Main Story", "https://example.com/main-story", score=91)
+        snapshot = {
+            "curated_stories": [story],
+            "plan": {
+                "instagram_morning_digest": [story],
+                "x_thread_1": story,
+                "youtube_daily": story,
+                "reddit_candidates": [story],
+                "discord_post": story,
+            },
+            "agent_outputs": [
+                {
+                    "article": story,
+                    "analysis": json.dumps({
+                        "why_it_matters": "This matters for the community.",
+                        "headline_hook": "Fast hook",
+                    }),
+                    "instagram_pack": {
+                        "cover_hook": "Big hook",
+                        "slides": ["Line one", "Line two"],
+                        "caption": "Caption line one.\nCaption line two.",
+                    },
+                    "voice_script": "Voice script ready",
+                    "qa": json.dumps({
+                        "approved": True,
+                        "hashtags": ["#simracing", "#motorsport"],
+                    }),
+                }
+            ],
+        }
+
+        items = dashboard_data.build_story_workspace_items(snapshot=snapshot, overrides={})
+
+        self.assertEqual(len(items), 1)
+        item = items[0]
+        self.assertEqual(item["key"], "https://example.com/main-story")
+        self.assertTrue(item["in_active_plan"])
+        self.assertIn("Morning Digest", " | ".join(item["planner_tags"]))
+        self.assertIn("X Thread 1", item["planner_tags"])
+        self.assertIn("YouTube Daily", item["planner_tags"])
+        self.assertIn("Reddit Candidate", item["planner_tags"])
+        self.assertIn("Discord Post", item["planner_tags"])
+        self.assertEqual(
+            item["recommended_platforms"],
+            ["instagram", "x", "youtube", "reddit", "discord", "email"],
+        )
+
+        instagram = item["platform_outputs"]["instagram"]
+        self.assertEqual(instagram["image_text"]["hook"], "Big hook")
+        self.assertEqual(instagram["image_text"]["line_1"], "Line one")
+        self.assertEqual(instagram["image_text"]["line_2"], "Line two")
+        self.assertIn("https://example.com/main-story", instagram["caption"]["text"])
+        self.assertIn("#simracing", instagram["hashtags"])
+
+        youtube = item["platform_outputs"]["youtube"]
+        self.assertEqual(youtube["voice_script"], "Voice script ready")
+        self.assertIn("https://example.com/main-story", youtube["description"])
+
+        x_output = item["platform_outputs"]["x"]
+        self.assertIn("https://example.com/main-story", x_output["text"])
+
+        email_output = item["platform_outputs"]["email"]
+        self.assertIn("https://example.com/main-story", email_output["body"])
+
+    def test_story_workspace_respects_active_digest_variant_and_fallback_outputs(self):
+        primary_story = make_story("Primary Story", "https://example.com/primary")
+        alt_story = make_story("Alternative Story", "https://example.com/alternative")
+        snapshot = {
+            "curated_stories": [primary_story, alt_story],
+            "plan": {
+                "instagram_morning_digest": [primary_story],
+                "instagram_morning_digest_alternatives": [[alt_story]],
+                "instagram_afternoon_digest": [],
+            },
+            "agent_outputs": [],
+        }
+
+        items = dashboard_data.build_story_workspace_items(
+            snapshot=snapshot,
+            overrides={"instagram_morning_digest": 1},
+        )
+
+        by_key = {item["key"]: item for item in items}
+        self.assertFalse(by_key["https://example.com/primary"]["in_active_plan"])
+        self.assertEqual(
+            by_key["https://example.com/alternative"]["planner_tags"],
+            ["Morning Digest (variant 1)"],
+        )
+        self.assertTrue(by_key["https://example.com/alternative"]["in_active_plan"])
+
+        instagram = by_key["https://example.com/alternative"]["platform_outputs"]["instagram"]
+        self.assertEqual(instagram["mode"], "fallback_story_draft")
+        self.assertEqual(instagram["image_text"]["hook"], "Alternative Story")
+        self.assertIn("https://example.com/alternative", instagram["caption"]["text"])
+        self.assertEqual(
+            by_key["https://example.com/alternative"]["available_platforms"],
+            list(dashboard_data.WORKSPACE_PLATFORMS),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -98,14 +98,12 @@ Typical operator flow today:
 1. Double-click [INICIAR_DASHBOARD.bat](/C:/Users/berna/Desktop/Simula_Project/morning-brief/INICIAR_DASHBOARD.bat) to open the dashboard with a readiness check.
 2. If you need to run the pipeline first, use [SIMULA_CONTROL_CENTER.bat](/C:/Users/berna/Desktop/Simula_Project/morning-brief/SIMULA_CONTROL_CENTER.bat) and choose `Run pipeline + open dashboard`.
 3. Work from the dashboard first:
-   - Instagram Morning Digest
-   - Instagram Afternoon Digest
-   - X
-   - YouTube
-   - Reddit
-   - Discord
-4. If agents are configured, review structured digest packs, image prompts, voice scripts, and QA.
-5. If needed, adjust `data/manual_overrides.json` from the dashboard or the control center.
+   - review the daily news feed
+   - manually select the stories you want to publish
+   - choose platforms per story
+   - copy publishing-ready outputs and open the source links directly from the workspace
+4. If agents are configured, use the story-level Instagram, image, voice, and QA enrichments when they are available; otherwise the dashboard stays usable with fallback drafts.
+5. If needed, adjust `data/manual_overrides.json` from the dashboard advanced area or the control center.
 6. Open the latest brief on the Desktop when you need the full Markdown artifact.
 7. If email digest is enabled, use the mobile-friendly delivery as a secondary operating surface.
 
@@ -116,10 +114,11 @@ The internal Streamlit dashboard is an operational layer on top of the CLI pipel
 What it provides:
 
 - latest run status and freshness state
-- curated story browser with direct links
-- Morning / Afternoon Instagram digest control
-- agent outputs, image prompts, voice scripts, QA, cards, and brief access
-- guided override editing and preview
+- story-first news feed with direct source links
+- manual story selection as the main interaction
+- per-platform output cards for Instagram, X, YouTube, Reddit, Discord, and Email
+- copy-ready publishing blocks close to the relevant story
+- advanced/system area for digests, overrides, files, and runtime status
 
 Launch options:
 

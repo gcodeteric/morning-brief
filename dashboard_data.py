@@ -71,6 +71,24 @@ DIGEST_PACK_FIELDS = (
     "instagram_afternoon_pack",
 )
 
+WORKSPACE_PLATFORMS = (
+    "instagram",
+    "x",
+    "youtube",
+    "reddit",
+    "discord",
+    "email",
+)
+
+WORKSPACE_PLATFORM_LABELS = {
+    "instagram": "Instagram",
+    "x": "X",
+    "youtube": "YouTube",
+    "reddit": "Reddit",
+    "discord": "Discord",
+    "email": "Email",
+}
+
 
 def _safe_json_load(path: Path, default):
     try:
@@ -162,6 +180,63 @@ def _safe_mtime_iso(path_like) -> str:
         return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
     except Exception:
         return ""
+
+
+def _story_key(story: dict | None) -> str:
+    story = normalize_story(story)
+    return story.get("link") or story.get("title") or ""
+
+
+def _compact_text(text, limit: int = 140) -> str:
+    compact = " ".join(str(text or "").split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: max(limit - 1, 1)].rstrip() + "…"
+
+
+def _parse_analysis_data(output: dict | None) -> dict:
+    output = output or {}
+    raw = output.get("analysis", "")
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _extract_article_slide_text(pack: dict, index: int) -> str:
+    slides = pack.get("slides", []) if isinstance(pack, dict) else []
+    if not isinstance(slides, list) or index >= len(slides):
+        return ""
+    slide = slides[index]
+    if isinstance(slide, dict):
+        return _compact_text(
+            slide.get("mini_summary")
+            or slide.get("news_title")
+            or slide.get("why_it_matters")
+            or "",
+            110,
+        )
+    return _compact_text(str(slide), 110)
+
+
+def _dedupe_non_empty_lines(values, limit: int = 4) -> list[str]:
+    lines = []
+    seen = set()
+    for value in values:
+        compact = _compact_text(value, 160)
+        if not compact:
+            continue
+        key = compact.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        lines.append(compact)
+        if len(lines) >= limit:
+            break
+    return lines
 
 
 def _hours_since(dt: datetime | None) -> float | None:
@@ -777,6 +852,400 @@ def load_available_story_sets(snapshot: dict | None = None) -> dict:
     }
 
 
+def resolve_digest_variant(plan: dict | None, overrides: dict | None, channel: str) -> tuple[list[dict], int]:
+    plan = _normalize_plan(plan or {})
+    overrides = overrides or {}
+
+    primary = normalize_digest(plan.get(channel, []))
+    alternatives = _normalize_digest_alternatives(plan.get(f"{channel}_alternatives", []))
+    requested_variant = _coerce_int(overrides.get(channel), 0)
+
+    if requested_variant == 1 and len(alternatives) > 0:
+        return alternatives[0], 1
+    if requested_variant == 2 and len(alternatives) > 1:
+        return alternatives[1], 2
+    return primary, 0
+
+
+def _split_copy_lines(text: str, limit: int = 4) -> list[str]:
+    raw_lines = []
+    for line in str(text or "").replace("\r", "\n").split("\n"):
+        compact = _compact_text(line.strip(" -•\t"), 200)
+        if compact:
+            raw_lines.append(compact)
+
+    if len(raw_lines) <= 1:
+        raw_lines = []
+        for chunk in (
+            str(text or "")
+            .replace("!", ".")
+            .replace("?", ".")
+            .replace("\r", " ")
+            .split(".")
+        ):
+            compact = _compact_text(chunk.strip(" -•\t"), 200)
+            if compact:
+                raw_lines.append(compact)
+
+    return raw_lines[:limit]
+
+
+def _add_usage_tag(usage_map: dict[str, list[str]], story: dict, label: str):
+    key = _story_key(story)
+    if not key:
+        return
+    current = usage_map.setdefault(key, [])
+    if label not in current:
+        current.append(label)
+
+
+def _collect_workspace_stories(plan: dict, curated_stories: list[dict], overrides: dict | None = None) -> list[dict]:
+    stories = []
+    seen = set()
+
+    def _append(story_like):
+        if not isinstance(story_like, dict) or not any(
+            story_like.get(field) for field in ("title", "link", "summary")
+        ):
+            return
+        story = normalize_story(story_like)
+        key = _story_key(story)
+        if not key or key in seen:
+            return
+        seen.add(key)
+        stories.append(story)
+
+    for story in curated_stories or []:
+        _append(story)
+
+    morning_digest, _ = resolve_digest_variant(plan, overrides, "instagram_morning_digest")
+    afternoon_digest, _ = resolve_digest_variant(plan, overrides, "instagram_afternoon_digest")
+    for story in [*morning_digest, *afternoon_digest]:
+        _append(story)
+
+    for field in SINGLE_STORY_PLAN_FIELDS:
+        _append(plan.get(field, {}))
+    for story in normalize_digest(plan.get("reddit_candidates", [])):
+        _append(story)
+
+    return stories
+
+
+def _build_story_usage_map(plan: dict, overrides: dict | None = None) -> dict[str, list[str]]:
+    usage_map: dict[str, list[str]] = {}
+
+    morning_digest, morning_variant = resolve_digest_variant(plan, overrides, "instagram_morning_digest")
+    afternoon_digest, afternoon_variant = resolve_digest_variant(plan, overrides, "instagram_afternoon_digest")
+
+    morning_label = (
+        f"Morning Digest (variant {morning_variant})"
+        if morning_variant
+        else "Morning Digest"
+    )
+    afternoon_label = (
+        f"Afternoon Digest (variant {afternoon_variant})"
+        if afternoon_variant
+        else "Afternoon Digest"
+    )
+
+    for story in morning_digest:
+        _add_usage_tag(usage_map, story, morning_label)
+    for story in afternoon_digest:
+        _add_usage_tag(usage_map, story, afternoon_label)
+
+    channel_labels = {
+        "x_thread_1": "X Thread 1",
+        "x_thread_2": "X Thread 2",
+        "youtube_daily": "YouTube Daily",
+        "discord_post": "Discord Post",
+    }
+    for field, label in channel_labels.items():
+        story = plan.get(field, {})
+        if isinstance(story, dict) and story:
+            _add_usage_tag(usage_map, story, label)
+
+    for story in normalize_digest(plan.get("reddit_candidates", [])):
+        _add_usage_tag(usage_map, story, "Reddit Candidate")
+
+    return usage_map
+
+
+def _suggest_platforms(planner_tags: list[str]) -> list[str]:
+    recommended = []
+    tags = planner_tags or []
+
+    if any("Digest" in tag for tag in tags):
+        recommended.append("instagram")
+    if any(tag.startswith("X Thread") for tag in tags):
+        recommended.append("x")
+    if any(tag.startswith("YouTube") for tag in tags):
+        recommended.append("youtube")
+    if any(tag.startswith("Reddit") for tag in tags):
+        recommended.append("reddit")
+    if any(tag.startswith("Discord") for tag in tags):
+        recommended.append("discord")
+
+    if not recommended:
+        recommended.extend(["instagram", "x"])
+
+    recommended.append("email")
+    return [platform for platform in WORKSPACE_PLATFORMS if platform in recommended]
+
+
+def _build_instagram_workspace_output(story: dict, agent_output: dict) -> dict:
+    story = normalize_story(story)
+    agent_output = _normalize_output(agent_output)
+    pack = agent_output.get("instagram_pack", {}) if isinstance(agent_output, dict) else {}
+    qa_data = parse_qa_data(agent_output.get("qa", ""))
+    analysis_data = _parse_analysis_data(agent_output)
+
+    hook = _compact_text(pack.get("cover_hook") or story.get("title", ""), 90)
+    line_1 = _extract_article_slide_text(pack, 0) or _compact_text(
+        story.get("summary") or analysis_data.get("why_it_matters") or "",
+        110,
+    )
+    line_2 = _extract_article_slide_text(pack, 1) or _compact_text(
+        analysis_data.get("community_question")
+        or analysis_data.get("headline_hook")
+        or f"{story.get('source', 'Fonte desconhecida')} • {story.get('category', 'unknown')}",
+        110,
+    )
+
+    caption_source = pack.get("caption") or ""
+    caption_lines = _dedupe_non_empty_lines(
+        [
+            *_split_copy_lines(caption_source, limit=4),
+            story.get("summary", ""),
+            analysis_data.get("why_it_matters", ""),
+            f"Fonte: {story.get('source', 'Fonte desconhecida')}",
+        ],
+        limit=4,
+    )
+    if not caption_lines:
+        caption_lines = [
+            _compact_text(story.get("summary") or story.get("title", ""), 160),
+            f"Fonte: {story.get('source', 'Fonte desconhecida')}",
+        ]
+
+    hashtags = [str(tag) for tag in qa_data.get("hashtags", []) if tag]
+    image_text_lines = [line for line in [hook, line_1, line_2] if line]
+    caption_parts = [story.get("title", "Sem título"), *caption_lines]
+    if story.get("link"):
+        caption_parts.append(story.get("link", ""))
+
+    mode = "agent_ready" if pack else "fallback_story_draft"
+    message = (
+        "Structured Instagram pack from the latest article-level agent run."
+        if pack
+        else "Built from story metadata because the latest run has no article-level Instagram pack for this story."
+    )
+
+    return {
+        "platform": "instagram",
+        "label": WORKSPACE_PLATFORM_LABELS["instagram"],
+        "mode": mode,
+        "message": message,
+        "source_link": story.get("link", ""),
+        "image_text": {
+            "hook": hook,
+            "line_1": line_1,
+            "line_2": line_2,
+            "text": "\n".join(image_text_lines).strip(),
+        },
+        "caption": {
+            "title": story.get("title", "Sem título"),
+            "lines": caption_lines,
+            "text": "\n".join(part for part in caption_parts if part).strip(),
+        },
+        "hashtags": hashtags,
+        "copy_text": "\n\n".join([
+            "IMAGE TEXT",
+            "\n".join(image_text_lines).strip(),
+            "CAPTION",
+            "\n".join(part for part in caption_parts if part).strip(),
+        ]).strip(),
+    }
+
+
+def _build_x_workspace_output(story: dict, agent_output: dict, planner_tags: list[str]) -> dict:
+    story = normalize_story(story)
+    analysis_data = _parse_analysis_data(agent_output)
+    lines = _dedupe_non_empty_lines(
+        [
+            story.get("title", ""),
+            analysis_data.get("why_it_matters", ""),
+            story.get("summary", ""),
+        ],
+        limit=3,
+    )
+    text_parts = [
+        lines[0] if lines else story.get("title", "Sem título"),
+        lines[1] if len(lines) > 1 else "",
+        story.get("link", ""),
+    ]
+    message = (
+        "This story is already used in an X slot in the latest plan."
+        if any(tag.startswith("X Thread") for tag in planner_tags)
+        else "Manual X draft built from the selected story."
+    )
+    return {
+        "platform": "x",
+        "label": WORKSPACE_PLATFORM_LABELS["x"],
+        "mode": "planner_slot" if any(tag.startswith("X Thread") for tag in planner_tags) else "manual_story_draft",
+        "message": message,
+        "source_link": story.get("link", ""),
+        "text": "\n".join(part for part in text_parts if part).strip(),
+    }
+
+
+def _build_youtube_workspace_output(story: dict, agent_output: dict, planner_tags: list[str]) -> dict:
+    story = normalize_story(story)
+    agent_output = _normalize_output(agent_output)
+    analysis_data = _parse_analysis_data(agent_output)
+    hook = _compact_text(
+        analysis_data.get("headline_hook") or story.get("title", ""),
+        90,
+    )
+    description_lines = _dedupe_non_empty_lines(
+        [
+            story.get("summary", ""),
+            analysis_data.get("why_it_matters", ""),
+            f"Fonte: {story.get('source', 'Fonte desconhecida')}",
+        ],
+        limit=3,
+    )
+    description_parts = [story.get("title", "Sem título"), *description_lines]
+    if story.get("link"):
+        description_parts.append(story.get("link", ""))
+    return {
+        "platform": "youtube",
+        "label": WORKSPACE_PLATFORM_LABELS["youtube"],
+        "mode": "voice_ready" if agent_output.get("voice_script") else "manual_story_draft",
+        "message": (
+            "Voice script available from the latest article-level agent run."
+            if agent_output.get("voice_script")
+            else "YouTube workspace draft built from story metadata."
+        ),
+        "source_link": story.get("link", ""),
+        "title": _compact_text(story.get("title", ""), 90),
+        "hook": hook,
+        "description": "\n".join(part for part in description_parts if part).strip(),
+        "voice_script": agent_output.get("voice_script", ""),
+    }
+
+
+def _build_reddit_workspace_output(story: dict, planner_tags: list[str]) -> dict:
+    story = normalize_story(story)
+    body_lines = _dedupe_non_empty_lines(
+        [
+            story.get("summary", ""),
+            f"Fonte: {story.get('source', 'Fonte desconhecida')}",
+        ],
+        limit=3,
+    )
+    if story.get("link"):
+        body_lines.append(story.get("link", ""))
+    return {
+        "platform": "reddit",
+        "label": WORKSPACE_PLATFORM_LABELS["reddit"],
+        "mode": "planner_candidate" if "Reddit Candidate" in planner_tags else "manual_story_draft",
+        "message": (
+            "This story is already shortlisted as a Reddit candidate."
+            if "Reddit Candidate" in planner_tags
+            else "Reddit draft built from the selected story."
+        ),
+        "source_link": story.get("link", ""),
+        "title": _compact_text(story.get("title", ""), 90),
+        "body": "\n\n".join(line for line in body_lines if line).strip(),
+    }
+
+
+def _build_discord_workspace_output(story: dict, planner_tags: list[str]) -> dict:
+    story = normalize_story(story)
+    text_parts = _dedupe_non_empty_lines(
+        [
+            story.get("title", ""),
+            story.get("summary", ""),
+            story.get("link", ""),
+        ],
+        limit=3,
+    )
+    return {
+        "platform": "discord",
+        "label": WORKSPACE_PLATFORM_LABELS["discord"],
+        "mode": "planner_slot" if "Discord Post" in planner_tags else "manual_story_draft",
+        "message": (
+            "This story is already the active Discord slot in the latest plan."
+            if "Discord Post" in planner_tags
+            else "Discord draft built from the selected story."
+        ),
+        "source_link": story.get("link", ""),
+        "text": "\n".join(text_parts).strip(),
+    }
+
+
+def _build_email_workspace_output(story: dict) -> dict:
+    story = normalize_story(story)
+    body_lines = _dedupe_non_empty_lines(
+        [
+            story.get("summary", ""),
+            f"Fonte: {story.get('source', 'Fonte desconhecida')}",
+            story.get("link", ""),
+        ],
+        limit=4,
+    )
+    return {
+        "platform": "email",
+        "label": WORKSPACE_PLATFORM_LABELS["email"],
+        "mode": "story_ready",
+        "message": "Short email-ready block built from the selected story.",
+        "source_link": story.get("link", ""),
+        "subject": _compact_text(story.get("title", ""), 100),
+        "body": "\n".join(line for line in body_lines if line).strip(),
+    }
+
+
+def build_story_workspace_items(snapshot: dict | None = None, overrides: dict | None = None) -> list[dict]:
+    snapshot = snapshot or load_latest_snapshot()
+    overrides = overrides or load_manual_overrides()
+    plan = snapshot.get("plan", {}) or {}
+    agent_outputs = snapshot.get("agent_outputs", []) or []
+    usage_map = _build_story_usage_map(plan, overrides)
+    stories = _collect_workspace_stories(
+        plan,
+        normalize_digest(snapshot.get("curated_stories", [])),
+        overrides=overrides,
+    )
+
+    items = []
+    for story in stories:
+        key = _story_key(story)
+        planner_tags = usage_map.get(key, [])
+        agent_output = find_agent_output_for_article(story, agent_outputs)
+        platform_outputs = {
+            "instagram": _build_instagram_workspace_output(story, agent_output),
+            "x": _build_x_workspace_output(story, agent_output, planner_tags),
+            "youtube": _build_youtube_workspace_output(story, agent_output, planner_tags),
+            "reddit": _build_reddit_workspace_output(story, planner_tags),
+            "discord": _build_discord_workspace_output(story, planner_tags),
+            "email": _build_email_workspace_output(story),
+        }
+
+        items.append({
+            "key": key,
+            "story": story,
+            "summary_snippet": _compact_text(story.get("summary", ""), 180),
+            "planner_tags": planner_tags,
+            "recommended_platforms": _suggest_platforms(planner_tags),
+            "available_platforms": list(WORKSPACE_PLATFORMS),
+            "platform_outputs": platform_outputs,
+            "agent_output": agent_output,
+            "in_active_plan": bool(planner_tags),
+        })
+
+    return items
+
+
 def extract_brief_snippet(article_title: str, window: int = 260) -> str:
     brief = load_latest_brief()
     content = brief.get("content", "")
@@ -806,6 +1275,8 @@ def build_dashboard_context() -> dict:
     channels = load_other_channel_data(snapshot=snapshot)
     story_sets = load_available_story_sets(snapshot=snapshot)
     freshness = _build_freshness_status(snapshot, run_summary, brief)
+    story_workspace = build_story_workspace_items(snapshot=snapshot, overrides=overrides)
+    selection_seed = [item.get("key", "") for item in story_workspace if item.get("in_active_plan")]
 
     useful_agent_outputs = [
         output for output in (snapshot.get("agent_outputs", []) or [])
@@ -833,6 +1304,7 @@ def build_dashboard_context() -> dict:
             "snapshot_exists": snapshot.get("exists", False),
             "freshness": freshness.get("label", "Missing"),
             "data_source": freshness.get("source", "missing"),
+            "workspace_stories": len(story_workspace),
         },
         "brief": brief,
         "overrides": overrides,
@@ -843,6 +1315,8 @@ def build_dashboard_context() -> dict:
         "freshness": freshness,
         "agent_runtime": agent_runtime,
         "selected_stories": normalize_digest(snapshot.get("curated_stories", [])),
+        "story_workspace": story_workspace,
+        "selection_seed": [key for key in selection_seed if key],
         # Backward-compatible keys used by the current Streamlit app.
         "snapshot": snapshot,
         "run_summary": run_summary,
@@ -865,22 +1339,8 @@ def build_selection_summary(context: dict, draft_overrides: dict | None = None) 
     active_overrides = dict((context.get("overrides", {}) or {}))
     if draft_overrides:
         active_overrides.update(draft_overrides)
-
-    def _resolve_digest(channel: str):
-        override_value = _coerce_int(active_overrides.get(channel), 0)
-        alternatives = plan.get(f"{channel}_alternatives", []) or []
-        if override_value == 1:
-            if len(alternatives) > 0:
-                return normalize_digest(alternatives[0]), 1
-            return normalize_digest(plan.get(channel, [])), 0
-        if override_value == 2:
-            if len(alternatives) > 1:
-                return normalize_digest(alternatives[1]), 2
-            return normalize_digest(plan.get(channel, [])), 0
-        return normalize_digest(plan.get(channel, [])), 0
-
-    morning_digest, morning_variant = _resolve_digest("instagram_morning_digest")
-    afternoon_digest, afternoon_variant = _resolve_digest("instagram_afternoon_digest")
+    morning_digest, morning_variant = resolve_digest_variant(plan, active_overrides, "instagram_morning_digest")
+    afternoon_digest, afternoon_variant = resolve_digest_variant(plan, active_overrides, "instagram_afternoon_digest")
 
     lines = [
         "SimulaNewsMachine — Selection Summary",

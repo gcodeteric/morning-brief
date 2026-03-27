@@ -1,7 +1,8 @@
-"""SimulaNewsMachine — premium internal dashboard for content operations."""
+"""SimulaNewsMachine — operator-first publishing workspace."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -23,11 +24,10 @@ from dashboard_components import (
     set_copy_buffer,
 )
 from dashboard_data import (
+    WORKSPACE_PLATFORMS,
+    WORKSPACE_PLATFORM_LABELS,
     build_selection_summary,
-    extract_brief_snippet,
-    find_agent_output_for_article,
     load_dashboard_context,
-    parse_qa_data,
 )
 from dashboard_overrides import (
     SUPPORTED_OVERRIDE_FIELDS,
@@ -40,25 +40,11 @@ from dashboard_overrides import (
 )
 
 NAV_ITEMS = [
-    "Overview",
-    "News Browser",
-    "Instagram",
-    "Other Channels",
-    "Image + Voice",
-    "Brief",
-    "Overrides",
-    "Settings / Status",
+    "News Feed",
+    "Selected News",
+    "Platform Outputs",
+    "Advanced / System",
 ]
-
-DIGEST_LABELS = {
-    "instagram_morning_digest": "Morning Digest",
-    "instagram_afternoon_digest": "Afternoon Digest",
-}
-
-
-def _article_key(article: dict) -> str:
-    article = article or {}
-    return article.get("link") or article.get("title") or json.dumps(article, ensure_ascii=False, sort_keys=True)
 
 
 def _safe_list(value):
@@ -69,34 +55,138 @@ def _safe_dict(value):
     return value if isinstance(value, dict) else {}
 
 
+def _widget_key(prefix: str, value: str = "") -> str:
+    digest = hashlib.md5(str(value).encode("utf-8")).hexdigest()[:12]
+    return f"{prefix}_{digest}"
+
+
+def _story_key(item: dict | None) -> str:
+    item = item or {}
+    return str(item.get("key") or "")
+
+
+def _workspace_items(context: dict) -> list[dict]:
+    return [item for item in _safe_list(context.get("story_workspace", [])) if _story_key(item)]
+
+
+def _workspace_lookup(context: dict) -> dict[str, dict]:
+    return {item["key"]: item for item in _workspace_items(context)}
+
+
+def _sanitize_platforms(platforms) -> list[str]:
+    values = []
+    for platform in _safe_list(platforms):
+        if platform in WORKSPACE_PLATFORMS and platform not in values:
+            values.append(platform)
+    return values
+
+
+def _default_story_platforms(item: dict) -> list[str]:
+    defaults = _sanitize_platforms(item.get("recommended_platforms", []))
+    return defaults or ["instagram", "x", "email"]
+
+
+def _selected_story_keys(context: dict) -> list[str]:
+    available = set(_workspace_lookup(context))
+    current = _safe_list(st.session_state.get("dashboard_selected_story_keys", []))
+    filtered = [key for key in current if key in available]
+    if filtered != current:
+        st.session_state["dashboard_selected_story_keys"] = filtered
+    return filtered
+
+
+def _selected_story_items(context: dict) -> list[dict]:
+    lookup = _workspace_lookup(context)
+    return [lookup[key] for key in _selected_story_keys(context) if key in lookup]
+
+
+def _get_story_platforms(item: dict) -> list[str]:
+    story_key = _story_key(item)
+    mapping = dict(st.session_state.get("dashboard_story_platforms", {}))
+    current = _sanitize_platforms(mapping.get(story_key, []))
+    if not current:
+        current = _default_story_platforms(item)
+        mapping[story_key] = current
+        st.session_state["dashboard_story_platforms"] = mapping
+    return current
+
+
+def _set_story_platforms(story_key: str, platforms) -> list[str]:
+    mapping = dict(st.session_state.get("dashboard_story_platforms", {}))
+    current = _sanitize_platforms(platforms)
+    mapping[story_key] = current
+    st.session_state["dashboard_story_platforms"] = mapping
+    return current
+
+
+def _select_story(item: dict):
+    story_key = _story_key(item)
+    if not story_key:
+        return
+    current = list(st.session_state.get("dashboard_selected_story_keys", []))
+    if story_key not in current:
+        current.append(story_key)
+    st.session_state["dashboard_selected_story_keys"] = current
+    _set_story_platforms(story_key, st.session_state.get("dashboard_story_platforms", {}).get(story_key) or _default_story_platforms(item))
+    st.session_state["dashboard_active_story_key"] = story_key
+
+
+def _deselect_story(story_key: str):
+    current = [key for key in _safe_list(st.session_state.get("dashboard_selected_story_keys", [])) if key != story_key]
+    st.session_state["dashboard_selected_story_keys"] = current
+    mapping = dict(st.session_state.get("dashboard_story_platforms", {}))
+    mapping.pop(story_key, None)
+    st.session_state["dashboard_story_platforms"] = mapping
+    if st.session_state.get("dashboard_active_story_key") == story_key:
+        st.session_state["dashboard_active_story_key"] = current[0] if current else ""
+
+
+def _seed_planned_selection(context: dict) -> bool:
+    lookup = _workspace_lookup(context)
+    seed = [key for key in _safe_list(context.get("selection_seed", [])) if key in lookup]
+    if not seed:
+        return False
+
+    st.session_state["dashboard_selected_story_keys"] = seed
+    mapping = dict(st.session_state.get("dashboard_story_platforms", {}))
+    for key in seed:
+        mapping[key] = _sanitize_platforms(mapping.get(key) or _default_story_platforms(lookup[key]))
+    st.session_state["dashboard_story_platforms"] = mapping
+    st.session_state["dashboard_active_story_key"] = seed[0]
+    return True
+
+
+def _clear_story_selection():
+    st.session_state["dashboard_selected_story_keys"] = []
+    st.session_state["dashboard_story_platforms"] = {}
+    st.session_state["dashboard_active_story_key"] = ""
+
+
 def _init_state(context: dict, force: bool = False):
-    plan = _safe_dict((context.get("snapshot", {}) or {}).get("plan", {}))
     current_overrides = load_current_overrides()
+    lookup = _workspace_lookup(context)
 
     if force or "dashboard_nav" not in st.session_state:
-        st.session_state["dashboard_nav"] = "Overview"
+        st.session_state["dashboard_nav"] = "News Feed"
+    if force or "dashboard_selected_story_keys" not in st.session_state:
+        st.session_state["dashboard_selected_story_keys"] = []
+    if force or "dashboard_story_platforms" not in st.session_state:
+        st.session_state["dashboard_story_platforms"] = {}
+    else:
+        mapping = {}
+        for key, value in dict(st.session_state.get("dashboard_story_platforms", {})).items():
+            if key in lookup:
+                mapping[key] = _sanitize_platforms(value)
+        st.session_state["dashboard_story_platforms"] = mapping
+    if force or "dashboard_active_story_key" not in st.session_state:
+        st.session_state["dashboard_active_story_key"] = ""
     if force or "dashboard_override_draft" not in st.session_state:
         st.session_state["dashboard_override_draft"] = {
             field: int(current_overrides.get(field, 0)) if str(current_overrides.get(field, 0)).isdigit() else 0
             for field in SUPPORTED_OVERRIDE_FIELDS
         }
-    if force or "dashboard_digest_drafts" not in st.session_state:
-        morning = _safe_list(resolve_preview_selection(
-            plan,
-            "instagram_morning_digest",
-            st.session_state["dashboard_override_draft"].get("instagram_morning_digest", 0),
-        ))
-        afternoon = _safe_list(resolve_preview_selection(
-            plan,
-            "instagram_afternoon_digest",
-            st.session_state["dashboard_override_draft"].get("instagram_afternoon_digest", 0),
-        ))
-        st.session_state["dashboard_digest_drafts"] = {
-            "instagram_morning_digest": list(morning),
-            "instagram_afternoon_digest": list(afternoon),
-        }
-    if force or "dashboard_preview_article" not in st.session_state:
-        st.session_state["dashboard_preview_article"] = ""
+
+    _selected_story_keys(context)
 
 
 def _set_navigation(page: str):
@@ -123,7 +213,7 @@ def _open_path_feedback(path_like):
 def _copy_button(label: str, text: str, key: str, primary: bool = False, slot_key: str | None = None):
     if st.button(label, key=key, use_container_width=True, type="primary" if primary else "secondary"):
         slot = slot_key or key
-        set_copy_buffer(text, label, slot)
+        set_copy_buffer(text or "", label, slot)
         st.toast(f"{label} pronto para copiar")
 
 
@@ -151,220 +241,756 @@ def _render_freshness_notice(context: dict):
     )
 
 
-def _render_story_summary(article: dict, show_inline_link: bool = True):
-    article = article or {}
-    title = article.get("title", "Sem título")
-    source = article.get("source", "Fonte desconhecida")
-    category = article.get("category", "unknown")
-    score = article.get("score", 0)
-    summary = (article.get("summary") or "").strip()
-    link = article.get("link", "")
-
-    meta_cols = st.columns([5, 1.2])
-    with meta_cols[0]:
-        st.markdown(f"#### {title}")
-        st.caption(f"{source} • {category}")
-    with meta_cols[1]:
+def _render_story_summary(story: dict, selected: bool = False):
+    story = story or {}
+    header_cols = st.columns([6, 1.4, 1.6])
+    with header_cols[0]:
+        st.markdown(f"#### {story.get('title', 'Sem título')}")
+        st.caption(f"{story.get('source', 'Fonte desconhecida')} • {story.get('category', 'unknown')}")
+    with header_cols[1]:
+        score = int(story.get("score", 0) or 0)
         render_status_pill(f"Score {score}", "info" if score >= 50 else "muted")
+    with header_cols[2]:
+        render_status_pill("Selected" if selected else "Available", "ok" if selected else "muted")
 
+    summary = str(story.get("summary", "") or "").strip()
     if summary:
         st.write(summary[:240])
-    if link and show_inline_link:
-        st.markdown(f"[Open source ↗]({link})")
 
 
-def _render_story_actions(article: dict, key_prefix: str, allow_digest_actions: bool = False):
-    article = article or {}
-    url = article.get("link", "")
-    copy_slot = f"{key_prefix}_copy_slot"
+def _render_story_context(item: dict):
+    planner_tags = _safe_list(item.get("planner_tags", []))
+    if planner_tags:
+        render_status_pill("In today’s plan", "ok")
+        st.caption("Used in: " + " • ".join(planner_tags))
+    else:
+        render_status_pill("Manual story", "muted")
 
-    primary = st.columns(3)
-    with primary[0]:
-        render_link_action(url, "Open Source", f"{key_prefix}_open")
-    with primary[1]:
-        _copy_button("Copy Link", url, f"{key_prefix}_copy", slot_key=copy_slot)
-    with primary[2]:
-        if st.button("Preview in Brief", key=f"{key_prefix}_brief", use_container_width=True):
-            st.session_state["dashboard_preview_article"] = article.get("title", "")
-
-    if allow_digest_actions:
-        secondary = st.columns(2)
-        with secondary[0]:
-            if st.button("Add to Morning", key=f"{key_prefix}_add_morning", use_container_width=True):
-                _add_story_to_digest("instagram_morning_digest", article)
-                st.toast("Adicionado ao draft da manhã")
-        with secondary[1]:
-            if st.button("Add to Afternoon", key=f"{key_prefix}_add_afternoon", use_container_width=True):
-                _add_story_to_digest("instagram_afternoon_digest", article)
-                st.toast("Adicionado ao draft da tarde")
-
-    render_copy_buffer(copy_slot)
+    recommended = _sanitize_platforms(item.get("recommended_platforms", []))
+    if recommended:
+        labels = [WORKSPACE_PLATFORM_LABELS.get(platform, platform.title()) for platform in recommended]
+        st.caption("Recommended platforms: " + " • ".join(labels))
 
 
-def _render_preview_snippet():
-    article_title = st.session_state.get("dashboard_preview_article", "")
-    if not article_title:
-        return
-    snippet = extract_brief_snippet(article_title)
-    if not snippet:
-        render_empty_state("Brief preview indisponível", "O artigo foi marcado para preview mas não foi encontrado no brief actual.")
-        return
-    with st.expander(f"Preview in Brief — {article_title[:80]}", expanded=False):
-        st.code(snippet, language="markdown")
+def _render_source_actions(story: dict, prefix: str, include_preview: bool = False):
+    slot = f"{prefix}_copy_slot"
+    actions = st.columns(3 if include_preview else 2)
+    with actions[0]:
+        render_link_action(story.get("link", ""), "Open Source", f"{prefix}_open")
+    with actions[1]:
+        _copy_button("Copy Link", story.get("link", ""), f"{prefix}_copy_link", slot_key=slot)
+    if include_preview:
+        with actions[2]:
+            if st.button("Open Outputs", key=f"{prefix}_outputs", use_container_width=True):
+                st.session_state["dashboard_active_story_key"] = story.get("link") or story.get("title", "")
+                _set_navigation("Platform Outputs")
+    render_copy_buffer(slot)
 
 
-def _add_story_to_digest(channel: str, article: dict):
-    drafts = st.session_state.get("dashboard_digest_drafts", {})
-    current = list(drafts.get(channel, []))
-    current_keys = {_article_key(item) for item in current}
-    if _article_key(article) not in current_keys:
-        current.append(article)
-    drafts[channel] = current[:7]
-    st.session_state["dashboard_digest_drafts"] = drafts
+def _render_workspace_summary(context: dict):
+    status = _safe_dict(context.get("status", {}))
+    runtime = _safe_dict(context.get("runtime", {}))
+    selected_count = len(_selected_story_keys(context))
+    planned_count = len(_safe_list(context.get("selection_seed", [])))
+    summary = st.columns(5)
+    summary[0].metric("Stories available", status.get("workspace_stories", len(_workspace_items(context))))
+    summary[1].metric("Selected now", selected_count)
+    summary[2].metric("Planned stories", planned_count)
+    summary[3].metric("Agent outputs useful", "Yes" if context.get("agents_useful") else "Partial")
+    summary[4].metric("Cards ready", "Yes" if runtime.get("cards_exist") else "No")
 
 
-def _remove_story_from_digest(channel: str, index: int):
-    drafts = st.session_state.get("dashboard_digest_drafts", {})
-    current = list(drafts.get(channel, []))
-    if 0 <= index < len(current):
-        current.pop(index)
-    drafts[channel] = current
-    st.session_state["dashboard_digest_drafts"] = drafts
+def _render_news_feed(context: dict):
+    items = _workspace_items(context)
+    selected_keys = set(_selected_story_keys(context))
 
+    render_page_header(
+        "News Feed",
+        "Browse today’s stories first, pick the ones you want, then move straight into publishing outputs.",
+    )
+    _render_freshness_notice(context)
+    _render_workspace_summary(context)
 
-def _move_story(channel: str, index: int, direction: int):
-    drafts = st.session_state.get("dashboard_digest_drafts", {})
-    current = list(drafts.get(channel, []))
-    target = index + direction
-    if 0 <= index < len(current) and 0 <= target < len(current):
-        current[index], current[target] = current[target], current[index]
-    drafts[channel] = current
-    st.session_state["dashboard_digest_drafts"] = drafts
+    actions = st.columns(4)
+    with actions[0]:
+        if st.button("Use Today’s Planned Stories", use_container_width=True, type="primary"):
+            if _seed_planned_selection(context):
+                st.toast("Planned stories loaded into the workspace")
+                st.rerun()
+            st.warning("The latest run does not expose a planned story set yet.")
+    with actions[1]:
+        if st.button("Open Selected News", use_container_width=True):
+            _set_navigation("Selected News")
+    with actions[2]:
+        if st.button("Open Platform Outputs", use_container_width=True):
+            _set_navigation("Platform Outputs")
+    with actions[3]:
+        if st.button("Open Latest Brief", use_container_width=True):
+            _open_path_feedback((context.get("brief", {}) or {}).get("path", ""))
 
-
-def _set_digest_variant(channel: str, variant: int, plan: dict):
-    st.session_state["dashboard_override_draft"][channel] = variant
-    resolved = _safe_list(resolve_preview_selection(plan, channel, variant))
-    st.session_state["dashboard_digest_drafts"][channel] = list(resolved)
-    st.toast(f"{DIGEST_LABELS.get(channel, channel)} → variante {variant}")
-
-
-def _format_digest_copy_text(pack: dict, stories: list[dict]) -> str:
-    pack = _safe_dict(pack)
-    lines = [
-        pack.get("cover_hook", "Sem cover hook"),
-        "",
-        f"Tema: {pack.get('digest_theme', 'N/A')}",
-        "",
-    ]
-    slides = _safe_list(pack.get("slides", []))
-    for idx, story in enumerate(stories[:7], 1):
-        slide = slides[idx - 1] if idx - 1 < len(slides) and isinstance(slides[idx - 1], dict) else {}
-        lines.append(f"{idx}. {slide.get('news_title') or story.get('title', 'Sem título')}")
-        summary = slide.get("mini_summary") or story.get("summary", "")
-        if summary:
-            lines.append(f"   {summary}")
-        why = slide.get("why_it_matters") or ""
-        if why:
-            lines.append(f"   Porque importa: {why}")
-    if pack.get("caption_intro"):
-        lines.extend(["", "Caption Intro:", pack.get("caption_intro", "")])
-    for item in _safe_list(pack.get("caption_news_list", [])):
-        lines.append(str(item))
-    if pack.get("community_question"):
-        lines.extend(["", "Pergunta final:", pack.get("community_question", "")])
-    return "\n".join(lines).strip()
-
-
-def _render_qa_block(qa_raw, key_prefix: str):
-    qa = parse_qa_data(qa_raw)
-    if qa.get("average") == "N/A" and not qa.get("scores"):
-        render_empty_state("QA não disponível", "Este bloco ainda não tem avaliação estruturada para o latest run.")
-        return
-
-    cols = st.columns(3)
-    cols[0].metric("QA Average", qa.get("average", "N/A"))
-    cols[1].metric("Approved", "Yes" if qa.get("approved") else "No")
-    cols[2].metric("Hashtags", len(qa.get("hashtags", [])))
-    if qa.get("scores"):
-        st.caption("Editorial checks")
-        for name, value in qa.get("scores", {}).items():
-            render_status_pill(f"{name}: {value}", "muted")
-    if qa.get("issues"):
-        st.warning(" | ".join(str(issue) for issue in qa.get("issues", [])))
-    if qa.get("hashtags"):
-        slot = f"{key_prefix}_hashtags_slot"
-        _copy_button(
-            "Copy Hashtags",
-            " ".join(str(x) for x in qa.get("hashtags", [])),
-            f"{key_prefix}_hashtags",
-            slot_key=slot,
+    if not items:
+        render_empty_state(
+            "No story workspace available",
+            "Run the normal pipeline first so the dashboard can load the latest structured story set and per-story workspace data.",
         )
-        render_copy_buffer(slot)
-
-
-def _render_digest_pack(pack: dict, key_prefix: str):
-    pack = _safe_dict(pack)
-    if not pack:
-        render_empty_state("Agent output missing", "O latest run não tem um digest pack estruturado para este bloco. O dashboard está em fallback seguro.")
         return
-    copy_slot = f"{key_prefix}_copy_slot"
 
-    top_cols = st.columns([1.3, 1, 1])
-    with top_cols[0]:
-        st.markdown(f"**Digest Theme**  \n{pack.get('digest_theme', 'N/A')}")
-    with top_cols[1]:
-        st.markdown(f"**Cover Hook**  \n{pack.get('cover_hook', 'N/A')}")
-    with top_cols[2]:
-        if pack.get("format"):
-            render_status_pill(pack.get("format", ""), "info")
-        if pack.get("cta_style"):
-            render_status_pill(f"CTA {pack.get('cta_style')}", "muted")
+    with card_container(soft=True):
+        render_section_header("Filters", "Keep the feed easy to scan without exposing pipeline internals.", level=3)
+        categories = sorted({item.get("story", {}).get("category", "unknown") for item in items})
+        sources = sorted({item.get("story", {}).get("source", "Fonte desconhecida") for item in items})
+        filters = st.columns([1.15, 1.15, 0.85, 1.25, 0.9])
+        category_filter = filters[0].multiselect("Category", categories)
+        source_filter = filters[1].multiselect("Source", sources)
+        min_score = filters[2].slider("Min score", min_value=0, max_value=100, value=0)
+        search_text = filters[3].text_input("Search")
+        planned_only = filters[4].toggle("Planned only", value=False)
 
-    button_row = st.columns(3)
-    with button_row[0]:
-        _copy_button("Copy Cover Hook", pack.get("cover_hook", ""), f"{key_prefix}_hook", slot_key=copy_slot)
-    with button_row[1]:
-        _copy_button("Copy Caption Intro", pack.get("caption_intro", ""), f"{key_prefix}_caption_intro", slot_key=copy_slot)
-    with button_row[2]:
-        _copy_button("Copy Community Question", pack.get("community_question", ""), f"{key_prefix}_question", slot_key=copy_slot)
+    filtered = []
+    search_lower = search_text.lower().strip()
+    for item in items:
+        story = _safe_dict(item.get("story", {}))
+        if category_filter and story.get("category", "unknown") not in category_filter:
+            continue
+        if source_filter and story.get("source", "Fonte desconhecida") not in source_filter:
+            continue
+        if int(story.get("score", 0) or 0) < min_score:
+            continue
+        if planned_only and not item.get("in_active_plan"):
+            continue
+        haystack = " ".join([
+            story.get("title", ""),
+            story.get("summary", ""),
+            story.get("source", ""),
+            " ".join(_safe_list(item.get("planner_tags", []))),
+        ]).lower()
+        if search_lower and search_lower not in haystack:
+            continue
+        filtered.append(item)
 
-    render_copy_buffer(copy_slot)
+    render_section_header("Stories", f"{len(filtered)} stories ready for manual selection.")
+    if not filtered:
+        render_empty_state("No stories match these filters", "Relax the current filters or load today’s planned stories into the workspace.")
+        return
 
-    slides = _safe_list(pack.get("slides", []))
-    if slides:
-        render_section_header("Slides", "Uma história por slide, em ordem editorial.", level=3)
-        for idx, slide in enumerate(slides[:7], 1):
-            with card_container(soft=True):
-                if isinstance(slide, dict):
-                    st.markdown(f"**{idx}. {slide.get('news_title', 'N/A')}**")
-                    if slide.get("mini_summary"):
-                        st.write(slide.get("mini_summary", ""))
-                    if slide.get("why_it_matters"):
-                        st.caption(f"Porque importa: {slide.get('why_it_matters', '')}")
+    columns = st.columns(2, gap="large")
+    for idx, item in enumerate(filtered):
+        story = _safe_dict(item.get("story", {}))
+        story_key = _story_key(item)
+        selected = story_key in selected_keys
+        with columns[idx % 2]:
+            with card_container(accent="success" if selected else None, soft=not selected):
+                _render_story_summary(story, selected=selected)
+                _render_story_context(item)
+                _render_source_actions(story, _widget_key("feed_story", story_key))
+
+                action_row = st.columns(2)
+                with action_row[0]:
+                    if selected:
+                        if st.button("Deselect", key=_widget_key("feed_deselect", story_key), use_container_width=True):
+                            _deselect_story(story_key)
+                            st.rerun()
+                    else:
+                        if st.button("Select Story", key=_widget_key("feed_select", story_key), use_container_width=True, type="primary"):
+                            _select_story(item)
+                            st.rerun()
+                with action_row[1]:
+                    if st.button("Platform Outputs", key=_widget_key("feed_outputs", story_key), use_container_width=True):
+                        _select_story(item)
+                        _set_navigation("Platform Outputs")
+
+
+def _render_selected_news(context: dict):
+    items = _selected_story_items(context)
+
+    render_page_header(
+        "Selected News",
+        "This is your manual working set. Choose platforms per story here before you move into copy-ready output cards.",
+    )
+    _render_freshness_notice(context)
+    render_notice(
+        "Selection model",
+        "Story selection and platform choices are session-only inside the dashboard. Persisted pipeline state still lives in the latest run snapshot, brief, cards, and manual override file.",
+        "warn",
+    )
+
+    actions = st.columns(4)
+    with actions[0]:
+        if st.button("Use Today’s Planned Stories", use_container_width=True, type="primary"):
+            if _seed_planned_selection(context):
+                st.toast("Planned stories loaded into the workspace")
+                st.rerun()
+            st.warning("The latest run does not expose a planned story set yet.")
+    with actions[1]:
+        if st.button("Open Platform Outputs", use_container_width=True):
+            _set_navigation("Platform Outputs")
+    with actions[2]:
+        if st.button("Back to News Feed", use_container_width=True):
+            _set_navigation("News Feed")
+    with actions[3]:
+        if st.button("Clear Selection", use_container_width=True):
+            _clear_story_selection()
+            st.rerun()
+
+    if not items:
+        render_empty_state(
+            "No stories selected yet",
+            "Pick stories in News Feed first, or pull in the stories already used by today’s plan.",
+        )
+        return
+
+    render_section_header("Selected Stories", f"{len(items)} story cards ready for platform choices.")
+    for item in items:
+        story = _safe_dict(item.get("story", {}))
+        story_key = _story_key(item)
+        widget_key = _widget_key("story_platforms", story_key)
+        current_platforms = _get_story_platforms(item)
+        if widget_key not in st.session_state:
+            st.session_state[widget_key] = current_platforms
+
+        with card_container(accent="success"):
+            _render_story_summary(story, selected=True)
+            _render_story_context(item)
+            _render_source_actions(story, _widget_key("selected_story", story_key))
+
+            chosen_platforms = st.multiselect(
+                "Platforms for this story",
+                list(WORKSPACE_PLATFORMS),
+                default=current_platforms,
+                key=widget_key,
+                format_func=lambda value: WORKSPACE_PLATFORM_LABELS.get(value, value.title()),
+            )
+            current_platforms = _set_story_platforms(story_key, chosen_platforms)
+            label_text = " • ".join(WORKSPACE_PLATFORM_LABELS.get(platform, platform.title()) for platform in current_platforms)
+            st.caption("Current output cards: " + (label_text or "No platforms selected yet"))
+
+            action_row = st.columns(4)
+            with action_row[0]:
+                if st.button("Use Recommended", key=_widget_key("selected_recommended", story_key), use_container_width=True):
+                    values = _default_story_platforms(item)
+                    st.session_state[widget_key] = values
+                    _set_story_platforms(story_key, values)
+                    st.rerun()
+            with action_row[1]:
+                if st.button("Use All Platforms", key=_widget_key("selected_all", story_key), use_container_width=True):
+                    values = list(WORKSPACE_PLATFORMS)
+                    st.session_state[widget_key] = values
+                    _set_story_platforms(story_key, values)
+                    st.rerun()
+            with action_row[2]:
+                if st.button("Open Outputs", key=_widget_key("selected_outputs", story_key), use_container_width=True):
+                    st.session_state["dashboard_active_story_key"] = story_key
+                    _set_navigation("Platform Outputs")
+            with action_row[3]:
+                if st.button("Remove Story", key=_widget_key("selected_remove", story_key), use_container_width=True):
+                    _deselect_story(story_key)
+                    st.rerun()
+
+
+def _render_instagram_output(item: dict, output: dict):
+    render_notice("Instagram workspace", output.get("message", ""), "ok" if output.get("mode") == "agent_ready" else "muted")
+    story = _safe_dict(item.get("story", {}))
+
+    cols = st.columns(2, gap="large")
+    with cols[0]:
+        with card_container(accent="morning", soft=True):
+            st.markdown("**Image Text**")
+            st.markdown(f"**Hook**  \n{output.get('image_text', {}).get('hook', 'N/A')}")
+            st.markdown(f"**Line 1**  \n{output.get('image_text', {}).get('line_1', 'N/A')}")
+            st.markdown(f"**Line 2**  \n{output.get('image_text', {}).get('line_2', 'N/A')}")
+            actions = st.columns(2)
+            with actions[0]:
+                _copy_button(
+                    "Copy Image Text",
+                    output.get("image_text", {}).get("text", ""),
+                    _widget_key("ig_image_copy", item.get("key", "")),
+                    slot_key=_widget_key("ig_image_slot", item.get("key", "")),
+                )
+            with actions[1]:
+                render_link_action(story.get("link", ""), "Open Source", _widget_key("ig_image_open", item.get("key", "")))
+            render_copy_buffer(_widget_key("ig_image_slot", item.get("key", "")))
+
+    with cols[1]:
+        with card_container(accent="afternoon", soft=True):
+            st.markdown("**Caption**")
+            st.code(output.get("caption", {}).get("text", ""), language="text")
+            actions = st.columns(3)
+            with actions[0]:
+                _copy_button(
+                    "Copy Caption",
+                    output.get("caption", {}).get("text", ""),
+                    _widget_key("ig_caption_copy", item.get("key", "")),
+                    slot_key=_widget_key("ig_caption_slot", item.get("key", "")),
+                )
+            with actions[1]:
+                _copy_button(
+                    "Copy Full Output",
+                    output.get("copy_text", ""),
+                    _widget_key("ig_full_copy", item.get("key", "")),
+                    slot_key=_widget_key("ig_caption_slot", item.get("key", "")),
+                )
+            with actions[2]:
+                render_link_action(story.get("link", ""), "Open Source", _widget_key("ig_caption_open", item.get("key", "")))
+            render_copy_buffer(_widget_key("ig_caption_slot", item.get("key", "")))
+
+            hashtags = _safe_list(output.get("hashtags", []))
+            if hashtags:
+                st.caption("Hashtags")
+                st.write(" ".join(hashtags))
+                _copy_button(
+                    "Copy Hashtags",
+                    " ".join(hashtags),
+                    _widget_key("ig_hashtags_copy", item.get("key", "")),
+                    slot_key=_widget_key("ig_hashtags_slot", item.get("key", "")),
+                )
+                render_copy_buffer(_widget_key("ig_hashtags_slot", item.get("key", "")))
+
+
+def _render_text_output(output: dict, title: str, copy_label: str, item: dict, text_key: str = "text"):
+    story = _safe_dict(item.get("story", {}))
+    render_notice(title, output.get("message", ""), "info" if output.get("mode", "").startswith("planner") else "muted")
+    with card_container(soft=True):
+        st.code(output.get(text_key, ""), language="text")
+        actions = st.columns(3)
+        with actions[0]:
+            _copy_button(
+                copy_label,
+                output.get(text_key, ""),
+                _widget_key(f"{output.get('platform', title)}_copy", item.get("key", "")),
+                slot_key=_widget_key(f"{output.get('platform', title)}_slot", item.get("key", "")),
+            )
+        with actions[1]:
+            _copy_button(
+                "Copy Link",
+                story.get("link", ""),
+                _widget_key(f"{output.get('platform', title)}_link_copy", item.get("key", "")),
+                slot_key=_widget_key(f"{output.get('platform', title)}_slot", item.get("key", "")),
+            )
+        with actions[2]:
+            render_link_action(story.get("link", ""), "Open Source", _widget_key(f"{output.get('platform', title)}_open", item.get("key", "")))
+        render_copy_buffer(_widget_key(f"{output.get('platform', title)}_slot", item.get("key", "")))
+
+
+def _render_youtube_output(item: dict, output: dict):
+    story = _safe_dict(item.get("story", {}))
+    render_notice("YouTube workspace", output.get("message", ""), "ok" if output.get("voice_script") else "muted")
+    main_cols = st.columns([1, 1], gap="large")
+    with main_cols[0]:
+        with card_container(soft=True):
+            st.markdown("**Working Title**")
+            st.write(output.get("title", ""))
+            st.markdown("**Hook**")
+            st.write(output.get("hook", ""))
+            st.markdown("**Description / Outline**")
+            st.code(output.get("description", ""), language="text")
+            actions = st.columns(3)
+            with actions[0]:
+                _copy_button(
+                    "Copy Title",
+                    output.get("title", ""),
+                    _widget_key("yt_title_copy", item.get("key", "")),
+                    slot_key=_widget_key("yt_title_slot", item.get("key", "")),
+                )
+            with actions[1]:
+                _copy_button(
+                    "Copy Description",
+                    output.get("description", ""),
+                    _widget_key("yt_desc_copy", item.get("key", "")),
+                    slot_key=_widget_key("yt_title_slot", item.get("key", "")),
+                )
+            with actions[2]:
+                render_link_action(story.get("link", ""), "Open Source", _widget_key("yt_open", item.get("key", "")))
+            render_copy_buffer(_widget_key("yt_title_slot", item.get("key", "")))
+    with main_cols[1]:
+        render_prompt_block(
+            "Voice Script",
+            output.get("voice_script", ""),
+            "No voice script is available for this story in the latest run. The rest of the YouTube draft still works.",
+        )
+        _copy_button(
+            "Copy Voice Script",
+            output.get("voice_script", ""),
+            _widget_key("yt_voice_copy", item.get("key", "")),
+            slot_key=_widget_key("yt_voice_slot", item.get("key", "")),
+        )
+        render_copy_buffer(_widget_key("yt_voice_slot", item.get("key", "")))
+
+
+def _render_reddit_output(item: dict, output: dict):
+    story = _safe_dict(item.get("story", {}))
+    render_notice("Reddit workspace", output.get("message", ""), "info" if output.get("mode") == "planner_candidate" else "muted")
+    with card_container(soft=True):
+        st.markdown("**Title**")
+        st.write(output.get("title", ""))
+        st.markdown("**Body**")
+        st.code(output.get("body", ""), language="text")
+        actions = st.columns(3)
+        with actions[0]:
+            _copy_button(
+                "Copy Reddit Title",
+                output.get("title", ""),
+                _widget_key("reddit_title_copy", item.get("key", "")),
+                slot_key=_widget_key("reddit_slot", item.get("key", "")),
+            )
+        with actions[1]:
+            _copy_button(
+                "Copy Reddit Body",
+                output.get("body", ""),
+                _widget_key("reddit_body_copy", item.get("key", "")),
+                slot_key=_widget_key("reddit_slot", item.get("key", "")),
+            )
+        with actions[2]:
+            render_link_action(story.get("link", ""), "Open Source", _widget_key("reddit_open", item.get("key", "")))
+        render_copy_buffer(_widget_key("reddit_slot", item.get("key", "")))
+
+
+def _render_email_output(item: dict, output: dict):
+    story = _safe_dict(item.get("story", {}))
+    render_notice("Email workspace", output.get("message", ""), "muted")
+    with card_container(soft=True):
+        st.markdown("**Subject**")
+        st.write(output.get("subject", ""))
+        st.markdown("**Email-ready block**")
+        st.code(output.get("body", ""), language="text")
+        actions = st.columns(3)
+        with actions[0]:
+            _copy_button(
+                "Copy Subject",
+                output.get("subject", ""),
+                _widget_key("email_subject_copy", item.get("key", "")),
+                slot_key=_widget_key("email_slot", item.get("key", "")),
+            )
+        with actions[1]:
+            _copy_button(
+                "Copy Email Block",
+                output.get("body", ""),
+                _widget_key("email_body_copy", item.get("key", "")),
+                slot_key=_widget_key("email_slot", item.get("key", "")),
+            )
+        with actions[2]:
+            render_link_action(story.get("link", ""), "Open Source", _widget_key("email_open", item.get("key", "")))
+        render_copy_buffer(_widget_key("email_slot", item.get("key", "")))
+
+
+def _render_story_platform_output(item: dict, platform: str):
+    outputs = _safe_dict(item.get("platform_outputs", {}))
+    output = _safe_dict(outputs.get(platform, {}))
+    if not output:
+        render_empty_state("Output unavailable", "This platform does not have a workspace draft for the selected story.")
+        return
+
+    if platform == "instagram":
+        _render_instagram_output(item, output)
+    elif platform == "x":
+        _render_text_output(output, "X workspace", "Copy X Draft", item)
+    elif platform == "youtube":
+        _render_youtube_output(item, output)
+    elif platform == "reddit":
+        _render_reddit_output(item, output)
+    elif platform == "discord":
+        _render_text_output(output, "Discord workspace", "Copy Discord Draft", item)
+    elif platform == "email":
+        _render_email_output(item, output)
+    else:
+        render_empty_state("Unsupported platform", "This workspace platform is not configured in the current dashboard build.")
+
+
+def _render_platform_outputs(context: dict):
+    items = _selected_story_items(context)
+    active_key = st.session_state.get("dashboard_active_story_key", "")
+
+    render_page_header(
+        "Platform Outputs",
+        "Open each selected story and work platform by platform, with source links and copy-ready blocks always nearby.",
+    )
+    _render_freshness_notice(context)
+    render_notice(
+        "Publishing workspace",
+        "The output cards below are designed for fast manual publishing. When agent data is missing, the dashboard stays usable with clear story-based fallback drafts.",
+        "muted",
+    )
+
+    if not items:
+        render_empty_state(
+            "No stories selected",
+            "Select stories in News Feed first, then choose the platforms you want to publish for each one.",
+        )
+        return
+
+    toolbar = st.columns([1.25, 1.15, 0.9, 0.9])
+    platform_filter = toolbar[0].multiselect(
+        "Show platforms",
+        list(WORKSPACE_PLATFORMS),
+        default=list(WORKSPACE_PLATFORMS),
+        format_func=lambda value: WORKSPACE_PLATFORM_LABELS.get(value, value.title()),
+    )
+    story_options = ["All selected stories"] + [item.get("story", {}).get("title", "Sem título") for item in items]
+    focused_story = toolbar[1].selectbox("Focus", story_options, index=0)
+    with toolbar[2]:
+        if st.button("Back to Selected News", use_container_width=True):
+            _set_navigation("Selected News")
+    with toolbar[3]:
+        if st.button("Clear Selection", use_container_width=True):
+            _clear_story_selection()
+            st.rerun()
+
+    for idx, item in enumerate(items):
+        story = _safe_dict(item.get("story", {}))
+        if focused_story != "All selected stories" and story.get("title", "Sem título") != focused_story:
+            continue
+
+        selected_platforms = [
+            platform for platform in _get_story_platforms(item)
+            if platform in (platform_filter or list(WORKSPACE_PLATFORMS))
+        ]
+        expanded = item.get("key") == active_key or (not active_key and idx == 0)
+        with st.expander(story.get("title", "Sem título"), expanded=expanded):
+            with card_container(accent="success"):
+                _render_story_summary(story, selected=True)
+                _render_story_context(item)
+                _render_source_actions(story, _widget_key("outputs_story", item.get("key", "")))
+
+                action_row = st.columns(3)
+                with action_row[0]:
+                    if st.button("Edit Platforms", key=_widget_key("outputs_edit", item.get("key", "")), use_container_width=True):
+                        _set_navigation("Selected News")
+                with action_row[1]:
+                    if st.button("Back to Feed", key=_widget_key("outputs_feed", item.get("key", "")), use_container_width=True):
+                        _set_navigation("News Feed")
+                with action_row[2]:
+                    if st.button("Remove Story", key=_widget_key("outputs_remove", item.get("key", "")), use_container_width=True):
+                        _deselect_story(item.get("key", ""))
+                        st.rerun()
+
+            if not selected_platforms:
+                render_empty_state(
+                    "No platforms selected for this story",
+                    "Choose one or more platforms in Selected News to populate this workspace.",
+                )
+                continue
+
+            tabs = st.tabs([WORKSPACE_PLATFORM_LABELS.get(platform, platform.title()) for platform in selected_platforms])
+            for tab, platform in zip(tabs, selected_platforms):
+                with tab:
+                    _render_story_platform_output(item, platform)
+
+
+def _render_digest_snapshot(context: dict):
+    plan = _safe_dict((context.get("snapshot", {}) or {}).get("plan", {}))
+    if not plan:
+        render_empty_state("No structured plan available", "Run the normal pipeline first so the dashboard can load digest state and variants.")
+        return
+
+    instagram = _safe_dict(context.get("instagram", {}))
+    cards = _safe_dict(context.get("cards", {}))
+    card_lookup = {
+        card.get("key", ""): card.get("path", "")
+        for card in _safe_list(cards.get("cards", []))
+        if card.get("key")
+    }
+    tabs = st.tabs(["Morning Digest", "Afternoon Digest"])
+    specs = [
+        ("instagram_morning_digest", "Morning Digest", "morning", tabs[0]),
+        ("instagram_afternoon_digest", "Afternoon Digest", "afternoon", tabs[1]),
+    ]
+
+    for field, label, accent, tab in specs:
+        with tab:
+            variant = int(_safe_dict(instagram.get("active_variants", {})).get(field, 0))
+            stories = _safe_list(resolve_preview_selection(plan, field, variant))
+            output_key = f"{field.replace('_digest', '')}_output"
+            output = _safe_dict(plan.get(output_key, {}))
+            if field == "instagram_morning_digest":
+                pack = _safe_dict(plan.get("instagram_morning_pack", {}))
+                card_path = card_lookup.get("morning_digest", "")
+            else:
+                pack = _safe_dict(plan.get("instagram_afternoon_pack", {}))
+                card_path = card_lookup.get("afternoon_digest", "")
+
+            with card_container(accent=accent):
+                summary = st.columns(4)
+                summary[0].metric("Stories", len(stories))
+                summary[1].metric("Active variant", variant)
+                summary[2].metric("Pack ready", "Yes" if pack else "Fallback")
+                summary[3].metric("Card", "Yes" if card_path and Path(card_path).exists() else "No")
+                if pack.get("cover_hook"):
+                    st.markdown(f"**Cover Hook**  \n{pack.get('cover_hook', '')}")
+                if pack.get("community_question"):
+                    st.caption(f"Community question: {pack.get('community_question', '')}")
+                if stories:
+                    for idx, story in enumerate(stories[:7], 1):
+                        st.markdown(f"**{idx}. {story.get('title', 'Sem título')}**")
+                        st.caption(story.get("source", "Fonte desconhecida"))
+                        render_link_action(story.get("link", ""), "Open Source", _widget_key(f"digest_{field}_{idx}", story.get("link", "")))
                 else:
-                    st.write(f"{idx}. {slide}")
+                    render_empty_state("No stories in this digest", "This active digest variant does not currently expose stories in the snapshot.")
 
-    if pack.get("caption_intro") or pack.get("caption_news_list"):
-        render_section_header("Caption", "Abertura e lista curta de apoio ao carrossel.", level=3)
-        if pack.get("caption_intro"):
-            st.write(pack.get("caption_intro", ""))
-        for item in _safe_list(pack.get("caption_news_list", [])):
-            st.write(str(item))
+                if output.get("image_prompt"):
+                    with st.expander("Image prompt", expanded=False):
+                        st.code(output.get("image_prompt", ""), language="text")
+                if output.get("voice_script"):
+                    with st.expander("Voice script", expanded=False):
+                        st.code(output.get("voice_script", ""), language="text")
 
-    footer = st.columns(2)
-    with footer[0]:
-        st.markdown(f"**Community Question**  \n{pack.get('community_question', 'N/A')}")
-    with footer[1]:
-        st.markdown(f"**Notes for Design**  \n{pack.get('notes_for_design', 'N/A')}")
+
+def _render_override_controls(context: dict):
+    snapshot = context.get("snapshot", {}) or {}
+    plan = _safe_dict(snapshot.get("plan", {}))
+    current_saved = load_current_overrides()
+
+    render_notice(
+        "Persistence model",
+        "Only integer override selections are persisted here. Story-by-story dashboard selection stays session-only and does not rewrite the pipeline state.",
+        "warn",
+    )
+
+    actions = st.columns(3)
+    with actions[0]:
+        if st.button("Save Overrides", use_container_width=True, type="primary"):
+            _save_overrides_feedback()
+    with actions[1]:
+        if st.button("Reset Overrides", use_container_width=True):
+            ok, message = reset_current_overrides()
+            if ok:
+                st.session_state["dashboard_override_draft"] = {field: 0 for field in SUPPORTED_OVERRIDE_FIELDS}
+                st.success(f"Overrides limpos em {message}")
+            else:
+                st.error(message)
+    with actions[2]:
+        if st.button("Open Overrides File", use_container_width=True):
+            _open_path_feedback(ensure_overrides_file())
+
+    if not plan:
+        render_empty_state("Plan not available", "Override preview is limited until a normal run persists a structured plan into the latest snapshot.")
+        return
+
+    main_cols = st.columns([1, 1], gap="large")
+    with main_cols[0]:
+        with card_container():
+            render_section_header("Variant controls", "Change saved morning/afternoon/channel variants without editing raw JSON.", level=3)
+            for field in SUPPORTED_OVERRIDE_FIELDS:
+                options = get_override_options(plan, field)
+                option_values = [value for value, _ in options]
+                labels = {value: label for value, label in options}
+                current_value = int(st.session_state.get("dashboard_override_draft", {}).get(field, 0))
+                chosen = st.selectbox(
+                    field.replace("_", " ").title(),
+                    option_values,
+                    index=option_values.index(current_value) if current_value in option_values else 0,
+                    format_func=lambda value, labels=labels: labels[value],
+                    key=_widget_key("override_selector", field),
+                )
+                st.session_state["dashboard_override_draft"][field] = chosen
+
+    with main_cols[1]:
+        with card_container():
+            render_section_header("Resolved summary", "Preview the effective selection before you persist anything.", level=3)
+            summary_text = build_selection_summary(context, st.session_state.get("dashboard_override_draft", {}))
+            st.code(summary_text, language="text")
+
+    with st.expander("Current saved JSON", expanded=False):
+        st.code(json.dumps(current_saved, indent=2, ensure_ascii=False), language="json")
+
+
+def _render_brief_and_files(context: dict):
+    brief = _safe_dict(context.get("brief", {}))
+    paths = _safe_dict(context.get("paths", {}))
+    export_text = build_selection_summary(context, st.session_state.get("dashboard_override_draft", {}))
+
+    actions = st.columns(4)
+    with actions[0]:
+        if st.button("Open Brief File", use_container_width=True):
+            _open_path_feedback(brief.get("path", ""))
+    with actions[1]:
+        if st.button("Open Brief Folder", use_container_width=True):
+            _open_path_feedback(brief.get("folder", ""))
+    with actions[2]:
+        if st.button("Open Cards Folder", use_container_width=True):
+            _open_path_feedback(paths.get("cards_folder", ""))
+    with actions[3]:
+        if st.button("Open Overrides File", use_container_width=True):
+            _open_path_feedback(ensure_overrides_file())
+
+    st.download_button(
+        "Export selection summary",
+        data=export_text,
+        file_name="simula_selection_summary.txt",
+        mime="text/plain",
+        use_container_width=True,
+    )
+
+    with card_container():
+        render_path_block("Brief path", brief.get("path", ""))
+        render_path_block("Brief folder", brief.get("folder", ""))
+        render_path_block("Cards folder", paths.get("cards_folder", ""))
+        render_path_block("Overrides file", paths.get("overrides", ""))
+
+    if brief.get("exists"):
+        with st.expander("Latest brief preview", expanded=False):
+            st.markdown(brief.get("content", ""))
+    else:
+        render_empty_state("Brief not available", "The latest brief file does not exist yet for this environment or run state.")
+
+
+def _render_system_status(context: dict):
+    runtime = _safe_dict(context.get("runtime", {}))
+    freshness = _safe_dict(context.get("freshness", {}))
+    agent_runtime = _safe_dict(context.get("agent_runtime", {}))
+    paths = _safe_dict(runtime.get("paths", {}))
+
+    metrics = st.columns(4)
+    metrics[0].metric("MiniMax", "Configured" if runtime.get("minimax_configured") else "Missing")
+    metrics[1].metric("Email", "Ready" if runtime.get("email_ready") else "Off / incomplete")
+    metrics[2].metric("Cards", "Ready" if runtime.get("cards_exist") else "Missing")
+    metrics[3].metric("Snapshot", freshness.get("label", "Missing"))
+
+    with card_container():
+        render_section_header("Runtime signals", "Operational state that still matters, without crowding the main workspace.", level=3)
+        render_status_pill("Snapshot ready" if runtime.get("snapshot_exists") else "No snapshot", "ok" if runtime.get("snapshot_exists") else "warn")
+        render_status_pill("Cards enabled" if runtime.get("card_generation_enabled") else "Cards disabled", "ok" if runtime.get("card_generation_enabled") else "muted")
+        render_status_pill("Email enabled" if runtime.get("email_enabled") else "Email disabled", "ok" if runtime.get("email_enabled") else "muted")
+        render_status_pill("Assets ready" if runtime.get("assets_ready") else "Assets missing", "ok" if runtime.get("assets_ready") else "warn")
+        st.caption(f"Data source: {freshness.get('source', 'missing')}")
+
+    with card_container():
+        render_section_header("Agent runtime", "Small operational summary for the latest persisted agent activity.", level=3)
+        cols = st.columns(5)
+        cols[0].metric("Pipelines", agent_runtime.get("pipelines", 0))
+        cols[1].metric("Useful outputs", agent_runtime.get("useful_outputs", 0))
+        cols[2].metric("Calls attempted", agent_runtime.get("calls_attempted", 0))
+        cols[3].metric("Timed out", agent_runtime.get("calls_timed_out", 0))
+        cols[4].metric("Duration", f"{agent_runtime.get('total_duration_sec', 0.0)}s")
+
+    with card_container():
+        render_section_header("Paths", "Useful operational paths kept in one quiet place.", level=3)
+        for label, path in paths.items():
+            render_path_block(label.replace("_", " ").title(), path)
+
+
+def _render_advanced_system(context: dict):
+    render_page_header(
+        "Advanced / System",
+        "The main workflow now lives in stories and platform outputs. This area keeps digest controls, files, overrides, and runtime state available without taking over the dashboard.",
+    )
+    _render_freshness_notice(context)
+
+    tabs = st.tabs(["Digests", "Overrides", "Brief & Files", "Status"])
+    with tabs[0]:
+        _render_digest_snapshot(context)
+    with tabs[1]:
+        _render_override_controls(context)
+    with tabs[2]:
+        _render_brief_and_files(context)
+    with tabs[3]:
+        _render_system_status(context)
 
 
 def _render_sidebar(context: dict):
-    run_summary = context.get("run_summary", {}) or {}
-    runtime = context.get("runtime", {}) or {}
-    snapshot = context.get("snapshot", {}) or {}
-    status = context.get("status", {}) or {}
-    freshness = context.get("freshness", {}) or {}
+    run_summary = _safe_dict(context.get("run_summary", {}))
+    status = _safe_dict(context.get("status", {}))
+    freshness = _safe_dict(context.get("freshness", {}))
+    runtime = _safe_dict(context.get("runtime", {}))
+    selected_count = len(_selected_story_keys(context))
 
     def _sidebar_pill(label: str, tone: str = "muted"):
         tone_map = {
@@ -380,43 +1006,35 @@ def _render_sidebar(context: dict):
             unsafe_allow_html=True,
         )
 
-    st.sidebar.title("Simula Operations")
-    st.sidebar.caption("Internal content control center")
+    st.sidebar.title("Simula Workspace")
+    st.sidebar.caption("News-first publishing control center")
     _sidebar_pill(
-        f"Run {run_summary.get('status', snapshot.get('run_status', 'UNKNOWN'))}",
-        "ok" if run_summary.get("status", snapshot.get("run_status", "UNKNOWN")) == "OK" else "warn",
+        f"Run {run_summary.get('status', status.get('run_status', 'UNKNOWN'))}",
+        "ok" if run_summary.get("status", status.get("run_status", "UNKNOWN")) == "OK" else "warn",
     )
-    if freshness.get("label"):
-        _sidebar_pill(
-            f"{freshness.get('label')} data",
-            freshness.get("tone", "muted"),
-        )
+    _sidebar_pill(
+        f"{freshness.get('label', 'Missing')} data",
+        freshness.get("tone", "muted"),
+    )
+    _sidebar_pill(f"{selected_count} selected", "info" if selected_count else "muted")
     if status.get("timestamp"):
         st.sidebar.caption(status.get("timestamp"))
-    if freshness.get("source"):
-        source_label = {
-            "structured_snapshot": "Snapshot",
-            "fallback_files": "Fallback",
-            "missing": "Missing",
-        }.get(freshness.get("source", ""), freshness.get("source", "Unknown"))
-        st.sidebar.caption(f"Source: {source_label}")
 
-    metrics_top = st.sidebar.columns(2)
-    metrics_top[0].metric("Scanned", run_summary.get("articles_scanned", 0))
-    metrics_top[1].metric("Selected", run_summary.get("articles_selected", 0))
-    metrics_bottom = st.sidebar.columns(2)
-    metrics_bottom[0].metric("Feeds OK", run_summary.get("feeds_ok", 0))
-    metrics_bottom[1].metric("Cards", len((context.get("cards", {}) or {}).get("cards", [])))
+    metrics = st.sidebar.columns(2)
+    metrics[0].metric("Stories", status.get("workspace_stories", len(_workspace_items(context))))
+    metrics[1].metric("Planned", len(_safe_list(context.get("selection_seed", []))))
 
     st.sidebar.radio("Navigate", NAV_ITEMS, key="dashboard_nav")
 
     st.sidebar.markdown("---")
     st.sidebar.caption("Quick actions")
-    if st.sidebar.button("Reload data", use_container_width=True, type="primary"):
-        _init_state(load_dashboard_context(), force=True)
+    if st.sidebar.button("Use planned stories", use_container_width=True, type="primary"):
+        if _seed_planned_selection(context):
+            st.rerun()
+        st.sidebar.warning("No planned stories available in the latest snapshot.")
+    if st.sidebar.button("Clear session selection", use_container_width=True):
+        _clear_story_selection()
         st.rerun()
-    if st.sidebar.button("Open overrides file", use_container_width=True):
-        _open_path_feedback(ensure_overrides_file())
     if st.sidebar.button("Open latest brief folder", use_container_width=True):
         _open_path_feedback(runtime.get("paths", {}).get("brief_folder", ""))
     if st.sidebar.button("Open cards folder", use_container_width=True):
@@ -434,699 +1052,15 @@ def _render_sidebar(context: dict):
     st.sidebar.markdown("---")
     st.sidebar.caption("Operational signals")
     _sidebar_pill("MiniMax ready" if runtime.get("minimax_configured") else "MiniMax missing", "ok" if runtime.get("minimax_configured") else "warn")
-    _sidebar_pill("Email on" if runtime.get("email_enabled") else "Email off", "ok" if runtime.get("email_enabled") else "muted")
-    _sidebar_pill("Cards on" if runtime.get("card_generation_enabled") else "Cards off", "ok" if runtime.get("card_generation_enabled") else "muted")
+    _sidebar_pill("Email ready" if runtime.get("email_ready") else "Email partial", "ok" if runtime.get("email_ready") else "muted")
+    _sidebar_pill("Cards ready" if runtime.get("cards_exist") else "No cards", "ok" if runtime.get("cards_exist") else "muted")
     _sidebar_pill("Snapshot ready" if runtime.get("snapshot_exists") else "No snapshot", "ok" if runtime.get("snapshot_exists") else "warn")
-
-
-def _render_overview(context: dict):
-    snapshot = context.get("snapshot", {}) or {}
-    plan = snapshot.get("plan", {}) or {}
-    run_summary = context.get("run_summary", {}) or {}
-    runtime = context.get("runtime", {}) or {}
-    overrides = context.get("overrides", {}) or {}
-    freshness = context.get("freshness", {}) or {}
-    agent_runtime = context.get("agent_runtime", {}) or {}
-
-    render_page_header(
-        "Overview",
-        "Latest run health, editorial status and the fastest route into today’s decisions.",
-    )
-
-    _render_freshness_notice(context)
-
-    if not snapshot.get("exists"):
-        render_empty_state(
-            "Snapshot not available",
-            "The dashboard is in fallback mode until the next normal run refreshes the structured latest-run snapshot.",
-        )
-
-    render_section_header("Quick Actions", "Jump straight into the most common daily tasks.")
-    quick = st.columns(4)
-    with quick[0]:
-        if st.button("View Morning Digest", use_container_width=True, type="primary"):
-            _set_navigation("Instagram")
-    with quick[1]:
-        if st.button("Open Latest Brief", use_container_width=True):
-            _open_path_feedback((context.get("brief", {}) or {}).get("path", ""))
-    with quick[2]:
-        if st.button("Open Overrides", use_container_width=True):
-            _set_navigation("Overrides")
-    with quick[3]:
-        if st.button("Open Cards Folder", use_container_width=True):
-            _open_path_feedback(runtime.get("paths", {}).get("cards_folder", ""))
-
-    render_section_header("Run Status", "Operational health and core output availability.")
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Run status", run_summary.get("status", snapshot.get("run_status", "UNKNOWN")))
-    c2.metric("Scanned", run_summary.get("articles_scanned", 0))
-    c3.metric("Curated", snapshot.get("total_after_dedup", run_summary.get("articles_after_dedup", 0)))
-    c4.metric("Selected", run_summary.get("articles_selected", len(snapshot.get("curated_stories", []))))
-    c5.metric("Freshness", freshness.get("label", "Unknown"))
-
-    render_section_header("Operational Health", "What is ready, what is active, and what still depends on fallback.")
-    health = st.columns(5)
-    health[0].metric("Overrides active", "Yes" if bool(overrides) else "No")
-    health[1].metric("Agents useful", "Yes" if context.get("agents_useful") else "No")
-    health[2].metric("Cards available", "Yes" if runtime.get("cards_exist") else "No")
-    health[3].metric("Email enabled", "Yes" if runtime.get("email_enabled") else "No")
-    health[4].metric("Data source", {
-        "structured_snapshot": "Snapshot",
-        "fallback_files": "Fallback",
-        "missing": "Missing",
-    }.get(freshness.get("source", ""), "Unknown"))
-
-    render_section_header("Agent Runtime", "Visibility into agent latency, fallbacks and useful output count.")
-    runtime_cols = st.columns(4)
-    runtime_cols[0].metric("Pipelines", agent_runtime.get("pipelines", 0))
-    runtime_cols[1].metric("Calls OK", agent_runtime.get("calls_succeeded", 0))
-    runtime_cols[2].metric("Timeouts / Fail", f"{agent_runtime.get('calls_timed_out', 0)} / {agent_runtime.get('calls_failed', 0)}")
-    runtime_cols[3].metric("Useful outputs", agent_runtime.get("useful_outputs", 0))
-
-    render_section_header("Instagram Today", "Morning and afternoon editorial digest blocks at a glance.")
-    d1, d2 = st.columns(2)
-    with d1:
-        with card_container(accent="morning"):
-            st.subheader("Morning Digest")
-            stories = _safe_list(plan.get("instagram_morning_digest", []))
-            render_status_pill(f"{len(stories)} stories", "info")
-            for article in stories[:5]:
-                st.write(f"• {article.get('title', 'Sem título')}")
-            if not stories:
-                render_empty_state("No morning digest", "There is no active morning digest in the current structured plan.")
-    with d2:
-        with card_container(accent="afternoon"):
-            st.subheader("Afternoon Digest")
-            stories = _safe_list(plan.get("instagram_afternoon_digest", []))
-            render_status_pill(f"{len(stories)} stories", "info")
-            for article in stories[:5]:
-                st.write(f"• {article.get('title', 'Sem título')}")
-            if not stories:
-                render_empty_state("No afternoon digest", "There is no active afternoon digest in the current structured plan.")
-
-    render_section_header("Content Overview", "Fast preview of the other channels planned for this run.")
-    cols = st.columns(4)
-    channel_preview = [
-        ("X", [plan.get("x_thread_1"), plan.get("x_thread_2")]),
-        ("YouTube", [plan.get("youtube_daily")]),
-        ("Reddit", _safe_list(plan.get("reddit_candidates", []))[:3]),
-        ("Discord", [plan.get("discord_post")]),
-    ]
-    for col, (label, items) in zip(cols, channel_preview):
-        with col:
-            with card_container():
-                st.markdown(f"**{label}**")
-                visible = False
-                for item in items:
-                    if not item:
-                        continue
-                    visible = True
-                    st.write(item.get("title", "Sem título"))
-                if not visible:
-                    st.caption("Sem conteúdo activo.")
-
-
-def _render_news_browser(context: dict):
-    stories = _safe_list((context.get("story_sets", {}) or {}).get("curated_stories", []))
-    render_page_header(
-        "News Browser",
-        "Filter curated stories, open direct sources and push promising items into working digest drafts.",
-    )
-    _render_freshness_notice(context)
-
-    top_actions = st.columns(3)
-    with top_actions[0]:
-        if st.button("Open Latest Brief", use_container_width=True):
-            _open_path_feedback((context.get("brief", {}) or {}).get("path", ""))
-    with top_actions[1]:
-        if st.button("Go to Instagram", use_container_width=True):
-            _set_navigation("Instagram")
-    with top_actions[2]:
-        if st.button("Open Overrides", use_container_width=True):
-            _set_navigation("Overrides")
-
-    if not stories:
-        render_empty_state("No curated stories available", "Run the normal pipeline first so the dashboard can load the latest structured story set.")
-        return
-
-    with card_container(soft=True):
-        render_section_header("Filters", "Keep filtering controls together so results stay easy to scan.", level=3)
-        categories = sorted({story.get("category", "unknown") for story in stories})
-        sources = sorted({story.get("source", "Fonte desconhecida") for story in stories})
-        filters = st.columns([1.1, 1.1, 0.9, 1.4])
-        category_filter = filters[0].multiselect("Category", categories)
-        source_filter = filters[1].multiselect("Source", sources)
-        min_score = filters[2].slider("Min score", min_value=0, max_value=100, value=0)
-        search_text = filters[3].text_input("Search")
-
-    filtered = []
-    search_lower = search_text.lower().strip()
-    for story in stories:
-        if category_filter and story.get("category", "unknown") not in category_filter:
-            continue
-        if source_filter and story.get("source", "Fonte desconhecida") not in source_filter:
-            continue
-        if story.get("score", 0) < min_score:
-            continue
-        haystack = " ".join([
-            story.get("title", ""),
-            story.get("summary", ""),
-            story.get("source", ""),
-        ]).lower()
-        if search_lower and search_lower not in haystack:
-            continue
-        filtered.append(story)
-
-    render_section_header("Results", f"{len(filtered)} stories after filters.")
-    _render_preview_snippet()
-
-    for idx, article in enumerate(filtered, 1):
-        with card_container():
-            _render_story_summary(article)
-            _render_story_actions(article, f"news_{idx}", allow_digest_actions=True)
-
-
-def _render_digest_variant_cards(channel: str, plan: dict, accent: str):
-    current_value = int(st.session_state.get("dashboard_override_draft", {}).get(channel, 0))
-    alternatives = _safe_list(plan.get(f"{channel}_alternatives", []))
-    variants = [
-        ("Primary", _safe_list(plan.get(channel, [])), 0),
-        ("Alternative 1", alternatives[0] if len(alternatives) > 0 else [], 1),
-        ("Alternative 2", alternatives[1] if len(alternatives) > 1 else [], 2),
-    ]
-    cols = st.columns(3)
-    for col, (label, stories, value) in zip(cols, variants):
-        with col:
-            with card_container(accent=accent if current_value == value else None, soft=current_value != value):
-                st.markdown(f"**{label}**")
-                render_status_pill("Active selection" if current_value == value else "Available fallback", "red" if current_value == value else "muted")
-                st.caption(f"{len(stories)} stories")
-                for story in stories[:4]:
-                    st.write(f"• {story.get('title', 'Sem título')}")
-                if not stories:
-                    st.caption("No stories in this variant.")
-                if st.button(
-                    "Use This Variant" if current_value != value else "Current Variant",
-                    key=f"{channel}_{value}_set",
-                    use_container_width=True,
-                    disabled=current_value == value,
-                ):
-                    _set_digest_variant(channel, value, plan)
-
-
-def _render_digest_story_draft(channel: str, stories: list[dict]):
-    render_section_header(
-        "Selected Stories",
-        "Session-only preview. Add/remove/reorder stays local to this browser session; only variant overrides are persisted.",
-        level=3,
-    )
-    if not stories:
-        render_empty_state("No stories in this digest", "There are no stories available for the current digest draft.")
-        return
-
-    for idx, article in enumerate(stories):
-        with card_container(soft=True):
-            _render_story_summary(article)
-            first_row = st.columns(3)
-            with first_row[0]:
-                render_link_action(article.get("link", ""), "Open Source", f"{channel}_{idx}_open")
-            with first_row[1]:
-                _copy_button("Copy Link", article.get("link", ""), f"{channel}_{idx}_copy", slot_key=f"{channel}_{idx}_copy_slot")
-            with first_row[2]:
-                if st.button("Remove", key=f"{channel}_{idx}_remove", use_container_width=True):
-                    _remove_story_from_digest(channel, idx)
-                    st.rerun()
-
-            second_row = st.columns(2)
-            with second_row[0]:
-                if st.button("Move Up", key=f"{channel}_{idx}_up", use_container_width=True, disabled=idx == 0):
-                    _move_story(channel, idx, -1)
-                    st.rerun()
-            with second_row[1]:
-                if st.button("Move Down", key=f"{channel}_{idx}_down", use_container_width=True, disabled=idx == len(stories) - 1):
-                    _move_story(channel, idx, 1)
-                    st.rerun()
-            render_copy_buffer(f"{channel}_{idx}_copy_slot")
-
-
-def _render_digest_assets(channel: str, label: str, output: dict, pack: dict, card_lookup: dict, stories: list[dict], accent: str):
-    render_section_header("Generated Assets", f"{label} pack, prompts, QA and card state.", level=3)
-
-    tabs = st.tabs(["Digest Pack", "Image Prompt", "Voice Script", "QA", "Card"])
-
-    with tabs[0]:
-        with card_container(accent=accent):
-            _render_digest_pack(pack, f"{channel}_pack")
-
-    with tabs[1]:
-        render_prompt_block(
-            "Image Prompt",
-            output.get("image_prompt", ""),
-            "The latest run did not persist an image prompt for this digest.",
-            accent=accent,
-        )
-        _copy_button("Copy Image Prompt", output.get("image_prompt", ""), f"{channel}_copy_image", slot_key=f"{channel}_image_slot")
-        render_copy_buffer(f"{channel}_image_slot")
-
-    with tabs[2]:
-        render_prompt_block(
-            "Voice Script",
-            output.get("voice_script", ""),
-            "The latest run did not persist a voice script for this digest.",
-            accent=accent,
-        )
-        _copy_button("Copy Voice Script", output.get("voice_script", ""), f"{channel}_copy_voice", slot_key=f"{channel}_voice_slot")
-        render_copy_buffer(f"{channel}_voice_slot")
-
-    with tabs[3]:
-        with card_container():
-            _render_qa_block(output.get("qa", ""), f"{channel}_qa")
-
-    with tabs[4]:
-        card_key = "morning_digest" if channel == "instagram_morning_digest" else "afternoon_digest"
-        card_path = card_lookup.get(card_key, "")
-        with card_container():
-            if card_path and Path(card_path).exists():
-                st.image(card_path, use_container_width=True)
-                actions = st.columns(2)
-                with actions[0]:
-                    if st.button("Open Card Folder", key=f"{channel}_open_cards", use_container_width=True):
-                        _open_path_feedback(Path(card_path).parent)
-                with actions[1]:
-                    _copy_button("Copy Card Path", card_path, f"{channel}_copy_card_path", slot_key=f"{channel}_card_slot")
-                render_copy_buffer(f"{channel}_card_slot")
-            else:
-                render_empty_state("No card available", "This digest does not currently have a generated card in the latest run.")
-
-
-def _render_digest_editor(channel: str, label: str, output: dict, pack: dict, card_lookup: dict, plan: dict, accent: str):
-    stories = _safe_list(st.session_state.get("dashboard_digest_drafts", {}).get(channel, []))
-    current_variant = int(st.session_state.get("dashboard_override_draft", {}).get(channel, 0))
-    has_pack = bool(pack)
-    has_card = bool(card_lookup.get("morning_digest" if channel == "instagram_morning_digest" else "afternoon_digest", ""))
-
-    render_section_header(label, "Review the active digest, compare variants, then inspect generated assets.")
-    render_notice(
-        "Persistence model",
-        "Save Variant Override only persists the selected variant (0/1/2). Manual story edits below are session-only preview and are not written back to the pipeline state.",
-        "warn",
-    )
-    summary = st.columns(4)
-    summary[0].metric("Stories", len(stories))
-    summary[1].metric("Persisted variant", current_variant)
-    summary[2].metric("Pack ready", "Yes" if has_pack else "Fallback")
-    summary[3].metric("Card", "Yes" if has_card else "No")
-
-    action_row = st.columns(4)
-    with action_row[0]:
-        if st.button("Save Variant Override", key=f"{channel}_save_active", use_container_width=True, type="primary"):
-            _save_overrides_feedback()
-    with action_row[1]:
-        _copy_button("Copy Full Digest Text", _format_digest_copy_text(pack, stories), f"{channel}_copy_full", slot_key=f"{channel}_actions_slot")
-    with action_row[2]:
-        _copy_button("Copy Community Question", _safe_dict(pack).get("community_question", ""), f"{channel}_copy_question", slot_key=f"{channel}_actions_slot")
-    with action_row[3]:
-        if st.button("Open Overrides Page", key=f"{channel}_open_overrides", use_container_width=True):
-            _set_navigation("Overrides")
-    render_copy_buffer(f"{channel}_actions_slot")
-
-    _render_digest_variant_cards(channel, plan, accent)
-
-    main_cols = st.columns([1.15, 0.95], gap="large")
-    with main_cols[0]:
-        with card_container(accent=accent):
-            _render_digest_story_draft(channel, stories)
-    with main_cols[1]:
-        _render_digest_assets(channel, label, output, pack, card_lookup, stories, accent)
-
-
-def _render_instagram(context: dict):
-    render_page_header(
-        "Instagram",
-        "Morning and afternoon digests, structured packs, prompts, QA and cards in one operational workspace.",
-    )
-    _render_freshness_notice(context)
-    snapshot = context.get("snapshot", {}) or {}
-    plan = _safe_dict(snapshot.get("plan", {}))
-
-    action_row = st.columns(3)
-    with action_row[0]:
-        if st.button("Save Overrides", use_container_width=True, type="primary"):
-            _save_overrides_feedback()
-    with action_row[1]:
-        if st.button("Open Cards Folder", use_container_width=True):
-            _open_path_feedback((context.get("runtime", {}) or {}).get("paths", {}).get("cards_folder", ""))
-    with action_row[2]:
-        if st.button("Open Latest Brief", use_container_width=True):
-            _open_path_feedback((context.get("brief", {}) or {}).get("path", ""))
-
-    if not plan:
-        render_empty_state("No structured plan available", "Run the normal pipeline first so the dashboard can load Instagram digests and their variants.")
-        return
-
-    tabs = st.tabs(["Morning Digest", "Afternoon Digest"])
-    cards = _safe_dict(snapshot.get("card_paths", {}))
-    with tabs[0]:
-        _render_digest_editor(
-            "instagram_morning_digest",
-            "Morning Digest",
-            _safe_dict(plan.get("instagram_morning_output", {})),
-            _safe_dict(plan.get("instagram_morning_pack", {})),
-            cards,
-            plan,
-            "morning",
-        )
-    with tabs[1]:
-        _render_digest_editor(
-            "instagram_afternoon_digest",
-            "Afternoon Digest",
-            _safe_dict(plan.get("instagram_afternoon_output", {})),
-            _safe_dict(plan.get("instagram_afternoon_pack", {})),
-            cards,
-            plan,
-            "afternoon",
-        )
-
-
-def _render_channel_output_block(output: dict, copy_key: str, empty_text: str):
-    output = _safe_dict(output)
-    if output.get("post"):
-        with card_container():
-            st.markdown("**Generated Output**")
-            st.code(output.get("post", ""), language="text")
-            slot = f"{copy_key}_output_slot"
-            _copy_button("Copy Output", output.get("post", ""), f"{copy_key}_output", slot_key=slot)
-            render_copy_buffer(slot)
-    else:
-        render_empty_state("No generated output", empty_text)
-
-
-def _render_other_channels(context: dict):
-    render_page_header(
-        "Other Channels",
-        "Keep X, YouTube, Reddit and Discord visible without overloading the workspace.",
-    )
-    _render_freshness_notice(context)
-    snapshot = context.get("snapshot", {}) or {}
-    plan = _safe_dict(snapshot.get("plan", {}))
-    agent_outputs = _safe_list(snapshot.get("agent_outputs", []))
-
-    sections = st.tabs(["X", "YouTube", "Reddit", "Discord"])
-
-    with sections[0]:
-        render_section_header("X Threads", "Two lighter editorial slots with direct source access.")
-        for label, channel in [("Thread 1", "x_thread_1"), ("Thread 2", "x_thread_2")]:
-            article = _safe_dict(plan.get(channel, {}))
-            with card_container():
-                st.subheader(label)
-                if not article:
-                    render_empty_state("No story selected", "This thread slot is empty in the latest plan.")
-                    continue
-                _render_story_summary(article)
-                _render_story_actions(article, f"x_{channel}")
-                output = find_agent_output_for_article(article, agent_outputs)
-                _render_channel_output_block(output, f"x_{channel}", "No generated thread copy is available for this slot.")
-
-    with sections[1]:
-        render_section_header("YouTube Daily", "Daily video slot with direct source and optional generated output.")
-        article = _safe_dict(plan.get("youtube_daily", {}))
-        with card_container():
-            if article:
-                _render_story_summary(article)
-                _render_story_actions(article, "youtube_daily")
-                output = find_agent_output_for_article(article, agent_outputs)
-                _render_channel_output_block(output, "youtube_daily", "No generated YouTube output is available for this slot.")
-                if output.get("voice_script"):
-                    with st.expander("Voice Script", expanded=False):
-                        st.code(output.get("voice_script", ""), language="text")
-                        _copy_button("Copy Voice Script", output.get("voice_script", ""), "yt_voice_copy", slot_key="yt_voice_slot")
-                        render_copy_buffer("yt_voice_slot")
-            else:
-                render_empty_state("No YouTube story selected", "This channel has no active daily pick in the latest run.")
-
-    with sections[2]:
-        render_section_header("Reddit Candidates", "Shortlist of eligible stories for Reddit.")
-        reddit_articles = _safe_list(plan.get("reddit_candidates", []))
-        if not reddit_articles:
-            render_empty_state("No Reddit candidates", "The planner did not persist eligible Reddit stories in the latest run.")
-        for idx, article in enumerate(reddit_articles, 1):
-            with card_container():
-                st.markdown(f"**Candidate {idx}**")
-                _render_story_summary(article)
-                _render_story_actions(article, f"reddit_{idx}")
-
-    with sections[3]:
-        render_section_header("Discord", "Single operational slot with explicit silence when nothing qualifies.")
-        article = _safe_dict(plan.get("discord_post", {}))
-        with card_container():
-            if article:
-                _render_story_summary(article)
-                _render_story_actions(article, "discord_post")
-                output = find_agent_output_for_article(article, agent_outputs)
-                _render_channel_output_block(output, "discord_post", "No generated Discord copy is available for this slot.")
-            else:
-                render_empty_state("Discord is silent", "No Discord post was selected for the latest run.")
-
-
-def _render_image_voice(context: dict):
-    render_page_header(
-        "Image + Voice",
-        "Use this page as a production prep workspace for prompts, scripts and the stories behind them.",
-    )
-    _render_freshness_notice(context)
-    snapshot = context.get("snapshot", {}) or {}
-    plan = _safe_dict(snapshot.get("plan", {}))
-    agent_outputs = _safe_list(snapshot.get("agent_outputs", []))
-
-    insta_tabs = st.tabs(["Instagram Morning", "Instagram Afternoon", "Top 3 Agent Outputs"])
-
-    def render_digest_media(label, digest_key, output_key, accent):
-        stories = _safe_list(plan.get(digest_key, []))
-        output = _safe_dict(plan.get(output_key, {}))
-
-        cols = st.columns([1.05, 0.95], gap="large")
-        with cols[0]:
-            with card_container(accent=accent):
-                render_section_header(label, "Source stories and direct links for this creative block.", level=3)
-                if stories:
-                    for idx, article in enumerate(stories[:7], 1):
-                        st.markdown(f"**{idx}. {article.get('title', 'Sem título')}**")
-                        st.caption(article.get("source", "Fonte desconhecida"))
-                        story_actions = st.columns(2)
-                        with story_actions[0]:
-                            render_link_action(article.get("link", ""), "Open Source", f"{digest_key}_{idx}_open")
-                        with story_actions[1]:
-                            _copy_button("Copy Story Link", article.get("link", ""), f"{digest_key}_{idx}_copy_link", slot_key=f"{digest_key}_{idx}_story_slot")
-                        render_copy_buffer(f"{digest_key}_{idx}_story_slot")
-                else:
-                    render_empty_state("No stories available", "This digest has no persisted stories in the latest run.")
-        with cols[1]:
-            render_prompt_block(
-                "Image Prompt",
-                output.get("image_prompt", ""),
-                "No image prompt is available for this digest.",
-                accent=accent,
-            )
-            _copy_button("Copy Image Prompt", output.get("image_prompt", ""), f"{digest_key}_img_copy", slot_key=f"{digest_key}_image_slot")
-            render_copy_buffer(f"{digest_key}_image_slot")
-            render_prompt_block(
-                "Voice Script",
-                output.get("voice_script", ""),
-                "No voice script is available for this digest.",
-                accent=accent,
-            )
-            _copy_button("Copy Voice Script", output.get("voice_script", ""), f"{digest_key}_voice_copy", slot_key=f"{digest_key}_voice_slot")
-            render_copy_buffer(f"{digest_key}_voice_slot")
-
-    with insta_tabs[0]:
-        render_digest_media("Morning Digest", "instagram_morning_digest", "instagram_morning_output", "morning")
-    with insta_tabs[1]:
-        render_digest_media("Afternoon Digest", "instagram_afternoon_digest", "instagram_afternoon_output", "afternoon")
-    with insta_tabs[2]:
-        render_section_header("Top 3 Agent Outputs", "Quick access to article-level image and voice assets.")
-        if not agent_outputs:
-            render_empty_state("No agent outputs persisted", "The latest run does not include article-level creative outputs.")
-        for idx, output in enumerate(agent_outputs, 1):
-            article = _safe_dict(output.get("article", {}))
-            with st.expander(f"{idx}. {article.get('title', 'Sem título')}", expanded=False):
-                _render_story_summary(article)
-                if output.get("image_prompt"):
-                    st.code(output.get("image_prompt", ""), language="text")
-                    _copy_button("Copy Image Prompt", output.get("image_prompt", ""), f"top_agent_image_{idx}", slot_key=f"top_agent_{idx}_slot")
-                if output.get("voice_script"):
-                    st.code(output.get("voice_script", ""), language="text")
-                    _copy_button("Copy Voice Script", output.get("voice_script", ""), f"top_agent_voice_{idx}", slot_key=f"top_agent_{idx}_slot")
-                render_copy_buffer(f"top_agent_{idx}_slot")
-
-
-def _render_brief_page(context: dict):
-    brief = context.get("brief", {}) or {}
-    render_page_header(
-        "Brief",
-        "Use the latest brief as a working artifact, with quick access to the file, folder and raw markdown.",
-    )
-    _render_freshness_notice(context)
-    if not brief.get("exists"):
-        render_empty_state("Brief not available", "The latest brief file does not exist yet for this environment or run state.")
-        return
-
-    actions = st.columns(4)
-    with actions[0]:
-        if st.button("Reload Brief", use_container_width=True, type="primary"):
-            st.rerun()
-    with actions[1]:
-        st.download_button(
-            "Download Markdown",
-            data=brief.get("content", ""),
-            file_name=Path(brief.get("path", "SIMULA_BRIEF_HOJE.md")).name,
-            mime="text/markdown",
-            use_container_width=True,
-        )
-    with actions[2]:
-        if st.button("Open Brief File", use_container_width=True):
-            _open_path_feedback(brief.get("path", ""))
-    with actions[3]:
-        if st.button("Open Brief Folder", use_container_width=True):
-            _open_path_feedback(brief.get("folder", ""))
-
-    render_path_block("Brief path", brief.get("path", ""))
-    tabs = st.tabs(["Rendered", "Raw markdown"])
-    with tabs[0]:
-        with card_container():
-            st.markdown(brief.get("content", ""))
-    with tabs[1]:
-        with card_container():
-            st.code(brief.get("content", ""), language="markdown")
-
-
-def _render_overrides_page(context: dict):
-    snapshot = context.get("snapshot", {}) or {}
-    plan = _safe_dict(snapshot.get("plan", {}))
-    current_saved = load_current_overrides()
-
-    render_page_header(
-        "Overrides",
-        "Guided override controls for digest and channel variants, with a preview before you save.",
-    )
-    _render_freshness_notice(context)
-
-    if not plan:
-        render_empty_state("Plan not available", "Override preview is limited until a normal run persists a structured plan into the latest snapshot.")
-
-    top = st.columns(3)
-    with top[0]:
-        if st.button("Save Overrides", use_container_width=True, type="primary"):
-            _save_overrides_feedback()
-    with top[1]:
-        if st.button("Reset Overrides", use_container_width=True):
-            ok, message = reset_current_overrides()
-            if ok:
-                st.session_state["dashboard_override_draft"] = {field: 0 for field in SUPPORTED_OVERRIDE_FIELDS}
-                st.success(f"Overrides limpos em {message}")
-            else:
-                st.error(message)
-    with top[2]:
-        if st.button("Open Overrides File", use_container_width=True):
-            _open_path_feedback(ensure_overrides_file())
-
-    summary = st.columns(3)
-    summary[0].metric("Saved overrides", len(current_saved))
-    summary[1].metric("Morning variant", st.session_state.get("dashboard_override_draft", {}).get("instagram_morning_digest", 0))
-    summary[2].metric("Afternoon variant", st.session_state.get("dashboard_override_draft", {}).get("instagram_afternoon_digest", 0))
-
-    main_cols = st.columns([1, 1], gap="large")
-    with main_cols[0]:
-        with card_container():
-            render_section_header("Guided Selection", "Pick digest/channel variants without editing raw JSON.", level=3)
-            for field in SUPPORTED_OVERRIDE_FIELDS:
-                options = get_override_options(plan, field)
-                option_values = [value for value, _ in options]
-                labels = {value: label for value, label in options}
-                current_value = int(st.session_state.get("dashboard_override_draft", {}).get(field, 0))
-                chosen = st.selectbox(
-                    field.replace("_", " ").title(),
-                    option_values,
-                    index=option_values.index(current_value) if current_value in option_values else 0,
-                    format_func=lambda value, labels=labels: labels[value],
-                    key=f"override_selector_{field}",
-                )
-                st.session_state["dashboard_override_draft"][field] = chosen
-
-    with main_cols[1]:
-        with card_container():
-            render_section_header("Preview of Effect", "Check the resulting digest selections before you save.", level=3)
-            preview_cols = st.columns(2)
-            for col, field in zip(preview_cols, ["instagram_morning_digest", "instagram_afternoon_digest"]):
-                with col:
-                    resolved = _safe_list(resolve_preview_selection(
-                        plan,
-                        field,
-                        int(st.session_state.get("dashboard_override_draft", {}).get(field, 0)),
-                    ))
-                    st.markdown(f"**{DIGEST_LABELS.get(field, field)}**")
-                    render_status_pill(
-                        f"Variant {st.session_state.get('dashboard_override_draft', {}).get(field, 0)}",
-                        "info",
-                    )
-                    for story in resolved[:5]:
-                        st.write(f"• {story.get('title', 'Sem título')}")
-                    if not resolved:
-                        st.caption("No stories available.")
-
-    with st.expander("Current saved JSON", expanded=False):
-        st.code(json.dumps(current_saved, indent=2, ensure_ascii=False), language="json")
-
-
-def _render_settings_status(context: dict):
-    runtime = context.get("runtime", {}) or {}
-    paths = runtime.get("paths", {}) or {}
-    assets_status = runtime.get("assets_status", {}) or {}
-
-    render_page_header(
-        "Settings / Status",
-        "Operational diagnostics for feature availability, required assets and file paths.",
-    )
-    _render_freshness_notice(context)
-
-    cols = st.columns(4)
-    cols[0].metric("MiniMax", "Configured" if runtime.get("minimax_configured") else "Missing")
-    cols[1].metric("Email", "Enabled" if runtime.get("email_enabled") else "Disabled")
-    cols[2].metric("Cards", "Enabled" if runtime.get("card_generation_enabled") else "Disabled")
-    cols[3].metric("Snapshot", "Ready" if runtime.get("snapshot_exists") else "Missing")
-
-    render_section_header("Feature Status", "High-level operational switches without exposing secrets.")
-    with card_container():
-        render_status_pill("Email ready" if runtime.get("email_ready") else "Email not ready", "ok" if runtime.get("email_ready") else "warn")
-        render_status_pill("Assets ready" if runtime.get("assets_ready") else "Assets missing", "ok" if runtime.get("assets_ready") else "warn")
-        render_status_pill("Cards exist" if runtime.get("cards_exist") else "No cards", "ok" if runtime.get("cards_exist") else "muted")
-        render_status_pill("Overrides file" if runtime.get("overrides_exists") else "No overrides file", "info" if runtime.get("overrides_exists") else "muted")
-
-    render_section_header("Assets", "Required dashboard-visible resources for card generation.")
-    with card_container():
-        for name, exists in assets_status.items():
-            render_status_pill(f"{name}: {'ok' if exists else 'missing'}", "ok" if exists else "warn")
-
-    render_section_header("Paths", "Useful operational paths, shown cleanly instead of as a raw dump.")
-    with card_container():
-        for label, path in paths.items():
-            render_path_block(label.replace("_", " ").title(), path)
-
-    actions = st.columns(3)
-    with actions[0]:
-        if st.button("Open Brief Folder", use_container_width=True):
-            _open_path_feedback(paths.get("brief_folder", ""))
-    with actions[1]:
-        if st.button("Open Cards Folder", use_container_width=True):
-            _open_path_feedback(paths.get("cards_folder", ""))
-    with actions[2]:
-        if st.button("Open Overrides File", use_container_width=True):
-            _open_path_feedback(ensure_overrides_file())
 
 
 def main():
     st.set_page_config(
-        page_title="Simula Operations Dashboard",
-        page_icon="🏎️",
+        page_title="Simula Workspace",
+        page_icon="📰",
         layout="wide",
     )
     inject_custom_css()
@@ -1135,23 +1069,15 @@ def main():
     _init_state(context)
     _render_sidebar(context)
 
-    nav = st.session_state.get("dashboard_nav", "Overview")
-    if nav == "Overview":
-        _render_overview(context)
-    elif nav == "News Browser":
-        _render_news_browser(context)
-    elif nav == "Instagram":
-        _render_instagram(context)
-    elif nav == "Other Channels":
-        _render_other_channels(context)
-    elif nav == "Image + Voice":
-        _render_image_voice(context)
-    elif nav == "Brief":
-        _render_brief_page(context)
-    elif nav == "Overrides":
-        _render_overrides_page(context)
-    elif nav == "Settings / Status":
-        _render_settings_status(context)
+    nav = st.session_state.get("dashboard_nav", "News Feed")
+    if nav == "News Feed":
+        _render_news_feed(context)
+    elif nav == "Selected News":
+        _render_selected_news(context)
+    elif nav == "Platform Outputs":
+        _render_platform_outputs(context)
+    elif nav == "Advanced / System":
+        _render_advanced_system(context)
 
 
 if __name__ == "__main__":
