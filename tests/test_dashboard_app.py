@@ -228,6 +228,18 @@ with mock.patch.object(dashboard_app, "load_dashboard_context", return_value=con
         labels = [button.label for button in at.button]
         self.assertIn("Deselect", labels)
 
+    def test_news_feed_programmatic_navigation_is_streamlit_safe(self):
+        context = make_context()
+
+        at = self._run_app(context, nav="News Feed")
+        self.assertEqual(len(at.exception), 0)
+
+        self._button_by_label(at, "Open Selected News").click().run()
+
+        self.assertEqual(len(at.exception), 0)
+        self.assertEqual(at.session_state["dashboard_nav"], "Selected News")
+        self.assertNotIn("_dashboard_nav_target", at.session_state)
+
     def test_news_feed_select_all_visible_adds_multiple_stories(self):
         stories = [
             make_workspace_item(title="Story One", link="https://example.com/story-one", score=96),

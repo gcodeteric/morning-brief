@@ -363,8 +363,14 @@ def _init_state(context: dict, force: bool = False):
 
 
 def _set_navigation(page: str):
-    st.session_state["dashboard_nav"] = page
+    st.session_state["_dashboard_nav_target"] = page
     st.rerun()
+
+
+def _apply_pending_navigation():
+    target = st.session_state.pop("_dashboard_nav_target", None)
+    if target is not None:
+        st.session_state["dashboard_nav"] = target
 
 
 def _save_overrides_feedback():
@@ -1266,6 +1272,7 @@ def _render_sidebar(context: dict):
     metrics[0].metric("Stories", status.get("workspace_stories", len(_workspace_items(context))))
     metrics[1].metric("Planned", len(_safe_list(context.get("selection_seed", []))))
 
+    _apply_pending_navigation()
     st.sidebar.radio("Navigate", NAV_ITEMS, key="dashboard_nav")
 
     st.sidebar.markdown("---")
