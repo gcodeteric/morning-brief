@@ -664,6 +664,7 @@ def curate_articles(articles):
 
     return {
         "selected": selected,
+        "story_pool": deduped,
         "total_before_dedup": total_before,
         "total_after_dedup": total_after,
         "categories": categories,

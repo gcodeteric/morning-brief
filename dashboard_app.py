@@ -260,16 +260,21 @@ def _render_story_summary(story: dict, selected: bool = False):
 
 def _render_story_context(item: dict):
     planner_tags = _safe_list(item.get("planner_tags", []))
-    if planner_tags:
+    if item.get("selected_by_system"):
+        render_status_pill("System picked", "info")
+    if item.get("in_current_digest"):
+        render_status_pill("In current digest", "ok")
+    elif planner_tags:
         render_status_pill("In today’s plan", "ok")
-        st.caption("Used in: " + " • ".join(planner_tags))
     else:
-        render_status_pill("Manual story", "muted")
+        render_status_pill("Manual pool", "muted")
 
     recommended = _sanitize_platforms(item.get("recommended_platforms", []))
     if recommended:
         labels = [WORKSPACE_PLATFORM_LABELS.get(platform, platform.title()) for platform in recommended]
         st.caption("Recommended platforms: " + " • ".join(labels))
+    if planner_tags:
+        st.caption("Used in: " + " • ".join(planner_tags))
 
 
 def _render_source_actions(story: dict, prefix: str, include_preview: bool = False):
@@ -336,15 +341,28 @@ def _render_news_feed(context: dict):
         return
 
     with card_container(soft=True):
-        render_section_header("Filters", "Keep the feed easy to scan without exposing pipeline internals.", level=3)
+        render_section_header("Filters", "These are operator-controlled filters only. The dashboard keeps the broader rated story pool visible by default.", level=3)
         categories = sorted({item.get("story", {}).get("category", "unknown") for item in items})
         sources = sorted({item.get("story", {}).get("source", "Fonte desconhecida") for item in items})
-        filters = st.columns([1.15, 1.15, 0.85, 1.25, 0.9])
-        category_filter = filters[0].multiselect("Category", categories)
-        source_filter = filters[1].multiselect("Source", sources)
-        min_score = filters[2].slider("Min score", min_value=0, max_value=100, value=0)
-        search_text = filters[3].text_input("Search")
-        planned_only = filters[4].toggle("Planned only", value=False)
+        top_filters = st.columns([1.15, 1.15, 0.85, 1.25, 1.25])
+        category_filter = top_filters[0].multiselect("Category", categories)
+        source_filter = top_filters[1].multiselect("Source", sources)
+        min_score = top_filters[2].slider("Min score", min_value=0, max_value=100, value=0)
+        search_text = top_filters[3].text_input("Search")
+        sort_option = top_filters[4].selectbox(
+            "Sort by",
+            [
+                "Score ↓",
+                "Score ↑",
+                "Title A-Z",
+                "Source A-Z",
+                "Category A-Z",
+            ],
+        )
+        bottom_filters = st.columns([1, 1, 1])
+        planned_only = bottom_filters[0].toggle("In plan only", value=False)
+        system_only = bottom_filters[1].toggle("System-picked only", value=False)
+        digest_only = bottom_filters[2].toggle("In current digest only", value=False)
 
     filtered = []
     search_lower = search_text.lower().strip()
@@ -358,6 +376,10 @@ def _render_news_feed(context: dict):
             continue
         if planned_only and not item.get("in_active_plan"):
             continue
+        if system_only and not item.get("selected_by_system"):
+            continue
+        if digest_only and not item.get("in_current_digest"):
+            continue
         haystack = " ".join([
             story.get("title", ""),
             story.get("summary", ""),
@@ -367,6 +389,17 @@ def _render_news_feed(context: dict):
         if search_lower and search_lower not in haystack:
             continue
         filtered.append(item)
+
+    if sort_option == "Score ↑":
+        filtered.sort(key=lambda item: (int(_safe_dict(item.get("story", {})).get("score", 0) or 0), _safe_dict(item.get("story", {})).get("title", "").lower()))
+    elif sort_option == "Title A-Z":
+        filtered.sort(key=lambda item: _safe_dict(item.get("story", {})).get("title", "").lower())
+    elif sort_option == "Source A-Z":
+        filtered.sort(key=lambda item: _safe_dict(item.get("story", {})).get("source", "").lower())
+    elif sort_option == "Category A-Z":
+        filtered.sort(key=lambda item: (_safe_dict(item.get("story", {})).get("category", "").lower(), -int(_safe_dict(item.get("story", {})).get("score", 0) or 0)))
+    else:
+        filtered.sort(key=lambda item: (-int(_safe_dict(item.get("story", {})).get("score", 0) or 0), _safe_dict(item.get("story", {})).get("title", "").lower()))
 
     render_section_header("Stories", f"{len(filtered)} stories ready for manual selection.")
     if not filtered:

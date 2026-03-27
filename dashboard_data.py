@@ -549,6 +549,7 @@ def save_dashboard_snapshot(curated, plan, card_paths, brief_path, run_summary=N
             if isinstance(output, dict)
         ]
         normalized_curated = normalize_digest(curated.get("selected", []))
+        normalized_story_pool = normalize_digest(curated.get("story_pool", [])) or list(normalized_curated)
         run_summary = run_summary or {}
 
         snapshot = {
@@ -557,6 +558,7 @@ def save_dashboard_snapshot(curated, plan, card_paths, brief_path, run_summary=N
             "timestamp": datetime.now().isoformat(),
             "run_status": run_summary.get("status", "OK"),
             "curated_stories": normalized_curated,
+            "rated_story_pool": normalized_story_pool,
             "curated_categories": curated.get("categories", {}) or {},
             "total_before_dedup": _coerce_int(curated.get("total_before_dedup"), 0),
             "total_after_dedup": _coerce_int(curated.get("total_after_dedup"), 0),
@@ -599,6 +601,7 @@ def load_latest_snapshot() -> dict:
         "timestamp": data.get("timestamp", "") if data else "",
         "run_status": data.get("run_status", "UNKNOWN") if data else "UNKNOWN",
         "curated_stories": normalize_digest(data.get("curated_stories", [])) if data else [],
+        "rated_story_pool": normalize_digest(data.get("rated_story_pool", [])) if data else [],
         "curated_categories": data.get("curated_categories", {}) if isinstance(data.get("curated_categories", {}), dict) else {},
         "total_before_dedup": _coerce_int(data.get("total_before_dedup"), 0) if data else 0,
         "total_after_dedup": _coerce_int(data.get("total_after_dedup"), 0) if data else 0,
@@ -843,6 +846,7 @@ def load_available_story_sets(snapshot: dict | None = None) -> dict:
     plan = snapshot.get("plan", {}) or {}
     return {
         "curated_stories": normalize_digest(snapshot.get("curated_stories", [])),
+        "rated_story_pool": _load_workspace_story_pool(snapshot),
         "plan": plan,
         "agent_outputs": snapshot.get("agent_outputs", []) or [],
         "morning_digest": instagram.get("morning_digest", []),
@@ -929,6 +933,14 @@ def _collect_workspace_stories(plan: dict, curated_stories: list[dict], override
         _append(story)
 
     return stories
+
+
+def _load_workspace_story_pool(snapshot: dict | None) -> list[dict]:
+    snapshot = snapshot or {}
+    rated_story_pool = normalize_digest(snapshot.get("rated_story_pool", []))
+    if rated_story_pool:
+        return rated_story_pool
+    return normalize_digest(snapshot.get("curated_stories", []))
 
 
 def _build_story_usage_map(plan: dict, overrides: dict | None = None) -> dict[str, list[str]]:
@@ -1211,9 +1223,14 @@ def build_story_workspace_items(snapshot: dict | None = None, overrides: dict | 
     plan = snapshot.get("plan", {}) or {}
     agent_outputs = snapshot.get("agent_outputs", []) or []
     usage_map = _build_story_usage_map(plan, overrides)
+    selected_keys = {
+        _story_key(story)
+        for story in normalize_digest(snapshot.get("curated_stories", []))
+        if _story_key(story)
+    }
     stories = _collect_workspace_stories(
         plan,
-        normalize_digest(snapshot.get("curated_stories", [])),
+        _load_workspace_story_pool(snapshot),
         overrides=overrides,
     )
 
@@ -1222,6 +1239,7 @@ def build_story_workspace_items(snapshot: dict | None = None, overrides: dict | 
         key = _story_key(story)
         planner_tags = usage_map.get(key, [])
         agent_output = find_agent_output_for_article(story, agent_outputs)
+        in_current_digest = any("Digest" in tag for tag in planner_tags)
         platform_outputs = {
             "instagram": _build_instagram_workspace_output(story, agent_output),
             "x": _build_x_workspace_output(story, agent_output, planner_tags),
@@ -1240,6 +1258,8 @@ def build_story_workspace_items(snapshot: dict | None = None, overrides: dict | 
             "available_platforms": list(WORKSPACE_PLATFORMS),
             "platform_outputs": platform_outputs,
             "agent_output": agent_output,
+            "selected_by_system": key in selected_keys,
+            "in_current_digest": in_current_digest,
             "in_active_plan": bool(planner_tags),
         })
 

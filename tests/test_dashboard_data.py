@@ -286,6 +286,105 @@ class DashboardDataTests(unittest.TestCase):
             list(dashboard_data.WORKSPACE_PLATFORMS),
         )
 
+    def test_snapshot_save_persists_full_rated_story_pool(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            snapshot_path = base / "dashboard_latest_snapshot.json"
+            brief_path = base / "brief.md"
+            brief_path.write_text("# Brief", encoding="utf-8")
+
+            selected_story = make_story("Selected Story", "https://example.com/selected", score=92)
+            extra_story = make_story("Extra Story", "https://example.com/extra", category="motorsport", score=41)
+            curated = {
+                "selected": [selected_story],
+                "story_pool": [selected_story, extra_story],
+                "categories": {"sim_racing": 1},
+                "total_before_dedup": 4,
+                "total_after_dedup": 2,
+                "agent_outputs": [],
+            }
+
+            with mock.patch.object(dashboard_data, "DASHBOARD_SNAPSHOT_FILE", snapshot_path):
+                dashboard_data.save_dashboard_snapshot(curated, {"instagram_morning_digest": [selected_story]}, {}, brief_path, {"status": "OK"})
+                snapshot = dashboard_data.load_latest_snapshot()
+
+            self.assertEqual(len(snapshot["curated_stories"]), 1)
+            self.assertEqual(len(snapshot["rated_story_pool"]), 2)
+            self.assertEqual(snapshot["rated_story_pool"][1]["link"], "https://example.com/extra")
+
+    def test_story_workspace_uses_broader_rated_story_pool_instead_of_selected_only(self):
+        selected_story = make_story("Selected Story", "https://example.com/selected", score=92)
+        extra_story = make_story("Extra Story", "https://example.com/extra", category="motorsport", score=41)
+        manual_story = make_story("Manual Story", "https://example.com/manual", category="nostalgia", score=27)
+        snapshot = {
+            "curated_stories": [selected_story],
+            "rated_story_pool": [selected_story, extra_story, manual_story],
+            "plan": {
+                "instagram_morning_digest": [selected_story],
+                "instagram_afternoon_digest": [],
+            },
+            "agent_outputs": [],
+        }
+
+        items = dashboard_data.build_story_workspace_items(snapshot=snapshot, overrides={})
+        by_key = {item["key"]: item for item in items}
+
+        self.assertEqual(len(items), 3)
+        self.assertTrue(by_key["https://example.com/selected"]["selected_by_system"])
+        self.assertFalse(by_key["https://example.com/extra"]["selected_by_system"])
+        self.assertFalse(by_key["https://example.com/manual"]["selected_by_system"])
+        self.assertFalse(by_key["https://example.com/extra"]["in_active_plan"])
+        self.assertEqual(by_key["https://example.com/extra"]["story"]["score"], 41)
+        self.assertIn("Morning Digest", " | ".join(by_key["https://example.com/selected"]["planner_tags"]))
+
+    def test_dashboard_context_exposes_full_workspace_story_count(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            snapshot_path = base / "dashboard_latest_snapshot.json"
+            run_summary_path = base / "run_summary.json"
+            output_file = base / "brief.md"
+            overrides_file = base / "manual_overrides.json"
+            cards_dir = base / "cards"
+            cards_dir.mkdir()
+            output_file.write_text("# Brief", encoding="utf-8")
+            run_summary_path.write_text(json.dumps({
+                "status": "OK",
+                "ended_at": datetime.now(timezone.utc).isoformat(),
+                "articles_selected": 1,
+                "brief_file": str(output_file),
+            }), encoding="utf-8")
+
+            selected_story = make_story("Selected Story", "https://example.com/selected", score=92)
+            extra_story = make_story("Extra Story", "https://example.com/extra", category="motorsport", score=41)
+            snapshot_path.write_text(json.dumps({
+                "schema_version": dashboard_data.SNAPSHOT_SCHEMA_VERSION,
+                "snapshot_kind": "latest_dashboard_snapshot",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "run_status": "OK",
+                "curated_stories": [selected_story],
+                "rated_story_pool": [selected_story, extra_story],
+                "plan": {
+                    "instagram_morning_digest": [selected_story],
+                    "instagram_afternoon_digest": [],
+                },
+                "agent_outputs": [],
+            }), encoding="utf-8")
+
+            with mock.patch.multiple(
+                dashboard_data,
+                DASHBOARD_SNAPSHOT_FILE=snapshot_path,
+                RUN_SUMMARY_FILE=run_summary_path,
+                OUTPUT_FILE=output_file,
+                MANUAL_OVERRIDES_FILE=overrides_file,
+                CARDS_DIR=cards_dir,
+            ):
+                context = dashboard_data.build_dashboard_context()
+
+            self.assertEqual(len(context["selected_stories"]), 1)
+            self.assertEqual(context["status"]["workspace_stories"], 2)
+            self.assertEqual(len(context["story_workspace"]), 2)
+            self.assertEqual(len(context["story_sets"]["rated_story_pool"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
