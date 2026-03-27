@@ -64,6 +64,20 @@ def is_dashboard_ready(url: str, timeout_seconds: float = 1.5) -> bool:
         return False
 
 
+def is_streamlit_available(python_executable: str | None = None) -> bool:
+    python_executable = python_executable or sys.executable
+    try:
+        result = subprocess.run(
+            [python_executable, "-m", "streamlit", "--version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def wait_for_dashboard(
     url: str,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
@@ -162,6 +176,11 @@ def open_browser_when_ready(
 ) -> int:
     if not DASHBOARD_APP.exists():
         print(f"ERRO: dashboard_app.py não foi encontrado em {DASHBOARD_APP}")
+        return 1
+
+    if not is_streamlit_available(python_executable=python_executable):
+        print("ERRO: Streamlit não está disponível neste ambiente Python.")
+        print("Instala as dependências com: pip install -r requirements.txt")
         return 1
 
     preferred_url = build_dashboard_url(host, port)

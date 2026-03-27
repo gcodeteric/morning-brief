@@ -72,8 +72,11 @@ Covered today:
   - browser only after readiness
   - dashboard port fallback
   - explicit chosen-port usage
+  - missing dashboard file
+  - missing Streamlit
   - no-port failure path
   - operational target resolution
+  - missing cards-folder path
 - `tests/test_main.py`
   - CLI summary wording for the current digest model
 
@@ -240,9 +243,12 @@ If launchers or `launch_dashboard.py` change, test:
 
 - helper import and compile
 - path resolution
+- missing dashboard file
+- missing Streamlit availability
 - readiness-check behavior
 - browser-after-readiness sequencing
 - occupied-port fallback
+- missing folder/file open targets where relevant
 - readable failure paths
 
 Do not trust batch file edits without validating the Python helper they depend on.

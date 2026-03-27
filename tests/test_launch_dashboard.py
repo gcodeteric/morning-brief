@@ -43,12 +43,38 @@ class LaunchDashboardTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2.0)
 
+    def test_missing_dashboard_file_fails_with_readable_message(self):
+        missing_path = launch_dashboard.PROJECT_ROOT / "__missing_dashboard__.py"
+        with mock.patch.object(launch_dashboard, "DASHBOARD_APP", missing_path), \
+             mock.patch("builtins.print") as print_mock:
+            result = launch_dashboard.open_browser_when_ready(open_browser_flag=False)
+
+        self.assertEqual(result, 1)
+        printed = " ".join(
+            " ".join(str(part) for part in call.args)
+            for call in print_mock.call_args_list
+        )
+        self.assertIn("dashboard_app.py não foi encontrado", printed)
+
+    def test_missing_streamlit_fails_with_readable_message(self):
+        with mock.patch.object(launch_dashboard, "is_streamlit_available", return_value=False), \
+             mock.patch("builtins.print") as print_mock:
+            result = launch_dashboard.open_browser_when_ready(open_browser_flag=False)
+
+        self.assertEqual(result, 1)
+        printed = " ".join(
+            " ".join(str(part) for part in call.args)
+            for call in print_mock.call_args_list
+        )
+        self.assertIn("streamlit não está disponível", printed.lower())
+
     def test_browser_opens_only_after_readiness(self):
         events = []
         fake_process = mock.Mock()
         fake_process.poll.return_value = None
 
-        with mock.patch.object(launch_dashboard, "is_dashboard_ready", return_value=False), \
+        with mock.patch.object(launch_dashboard, "is_streamlit_available", return_value=True), \
+             mock.patch.object(launch_dashboard, "is_dashboard_ready", return_value=False), \
              mock.patch.object(launch_dashboard, "is_port_available", return_value=True), \
              mock.patch.object(launch_dashboard, "start_streamlit_dashboard", side_effect=lambda **kwargs: events.append("start") or fake_process), \
              mock.patch.object(launch_dashboard, "wait_for_dashboard", side_effect=lambda *args, **kwargs: events.append("wait") or True), \
@@ -80,7 +106,8 @@ class LaunchDashboardTests(unittest.TestCase):
         self.assertIsNone(chosen)
 
     def test_already_ready_dashboard_does_not_restart_streamlit(self):
-        with mock.patch.object(launch_dashboard, "is_dashboard_ready", return_value=True), \
+        with mock.patch.object(launch_dashboard, "is_streamlit_available", return_value=True), \
+             mock.patch.object(launch_dashboard, "is_dashboard_ready", return_value=True), \
              mock.patch.object(launch_dashboard, "start_streamlit_dashboard") as starter, \
              mock.patch.object(launch_dashboard.webbrowser, "open", return_value=True):
             result = launch_dashboard.open_browser_when_ready(open_browser_flag=True)
@@ -96,7 +123,8 @@ class LaunchDashboardTests(unittest.TestCase):
         def _is_available(_host, port):
             return port == 8502
 
-        with mock.patch.object(launch_dashboard, "is_dashboard_ready", return_value=False), \
+        with mock.patch.object(launch_dashboard, "is_streamlit_available", return_value=True), \
+             mock.patch.object(launch_dashboard, "is_dashboard_ready", return_value=False), \
              mock.patch.object(launch_dashboard, "is_port_available", side_effect=_is_available), \
              mock.patch.object(
                  launch_dashboard,
@@ -126,7 +154,8 @@ class LaunchDashboardTests(unittest.TestCase):
         )
 
     def test_no_available_port_fails_with_readable_message(self):
-        with mock.patch.object(launch_dashboard, "is_dashboard_ready", return_value=False), \
+        with mock.patch.object(launch_dashboard, "is_streamlit_available", return_value=True), \
+             mock.patch.object(launch_dashboard, "is_dashboard_ready", return_value=False), \
              mock.patch.object(launch_dashboard, "is_port_available", return_value=False), \
              mock.patch("builtins.print") as print_mock:
             result = launch_dashboard.open_browser_when_ready(open_browser_flag=False)
@@ -166,6 +195,19 @@ class LaunchDashboardTests(unittest.TestCase):
         self.assertEqual(brief_folder, Path(launch_dashboard.OUTPUT_FILE).parent)
         self.assertEqual(cards_folder, launch_dashboard.CARDS_DIR)
         self.assertEqual(project_root, launch_dashboard.PROJECT_ROOT)
+
+    def test_open_cards_folder_returns_error_when_missing(self):
+        missing_cards = launch_dashboard.PROJECT_ROOT / "__missing_cards__"
+        with mock.patch.object(launch_dashboard, "CARDS_DIR", missing_cards), \
+             mock.patch("builtins.print") as print_mock:
+            result = launch_dashboard.main(["open", "cards-folder"])
+
+        self.assertEqual(result, 1)
+        printed = " ".join(
+            " ".join(str(part) for part in call.args)
+            for call in print_mock.call_args_list
+        )
+        self.assertIn("cards folder ainda não existe", printed.lower())
 
 
 if __name__ == "__main__":
