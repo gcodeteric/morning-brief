@@ -75,7 +75,7 @@ def main():
 
         if channel_id:
             rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-            print(f"   OK → {channel_id}")
+            print(f"   OK -> {channel_id}")  # FIX 2026-05-11: keep CLI output safe on Windows cp1252 consoles.
             ok_count += 1
             results.append({
                 "name": name,
@@ -83,11 +83,13 @@ def main():
                 "channel_id": channel_id,
                 "cat": channel.get("cat", "sim_racing"),
                 "p": channel.get("p", 5),
+                "official": channel.get("official", False),
+                "source_type": channel.get("source_type", "media"),
                 "rss_url": rss_url,
                 "status": "OK",
             })
         else:
-            print(f"   FALHOU — channel_id não encontrado")
+            print("   FALHOU -- channel_id nao encontrado")  # FIX 2026-05-11: keep CLI output safe on Windows cp1252 consoles.
             fail_count += 1
             results.append({
                 "name": name,
@@ -95,6 +97,8 @@ def main():
                 "channel_id": None,
                 "cat": channel.get("cat", "sim_racing"),
                 "p": channel.get("p", 5),
+                "official": channel.get("official", False),
+                "source_type": channel.get("source_type", "media"),
                 "rss_url": None,
                 "status": "FALHOU",
             })

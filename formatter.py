@@ -8,6 +8,8 @@ import json
 import logging
 from datetime import datetime
 
+from config import OFFICIAL_BADGE, SOURCE_TYPE_LABELS, UNOFFICIAL_BADGE
+
 DAY_CONTEXT = {
     0: "É segunda-feira — menciona brevemente o que aconteceu no fim-de-semana.",
     4: "É sexta-feira — podes antecipar o que vem aí este fim-de-semana.",
@@ -59,18 +61,26 @@ REGRAS LEGAIS OBRIGATÓRIAS (Portugal/UE):
 NOTA_IA_YOUTUBE = '"Este vídeo utiliza narração gerada por inteligência artificial (IA). O conteúdo informativo foi verificado pela equipa Simula Project."'
 
 
+def _article_classification_prefix(article):
+    """Devolve badge oficial/não oficial e tipo de fonte para o brief."""
+    official_badge = OFFICIAL_BADGE if article.get("is_official_content") else UNOFFICIAL_BADGE
+    source_label = SOURCE_TYPE_LABELS.get(article.get("source_type", "media"), "📰 MEDIA")
+    return f"{official_badge} {source_label}"
+
+
 def _format_article_highlight(article, index):
     """Formata artigo como destaque (posicao 1-5)."""
     category = article.get("category", "unknown")
     emoji = CATEGORY_EMOJI.get(category, "📰")
     title = article.get("title") or "Sem título"
+    article_header = f"{_article_classification_prefix(article)} | {title}"
     source = article.get("source") or "Fonte desconhecida"
     summary = (article.get("summary") or "")[:200]
     link = article.get("link", "")
     score = article.get("score", 0)
 
     lines = [
-        f"### {index}. {emoji} **{title}**",
+        f"### {index}. {emoji} **{article_header}**",
         f"📡 {source} | Score: {score}",
         "",
     ]
@@ -87,9 +97,10 @@ def _format_article_compact(article, index):
     category = article.get("category", "unknown")
     emoji = CATEGORY_EMOJI.get(category, "📰")
     title = article.get("title") or "Sem título"
+    article_header = f"{_article_classification_prefix(article)} | {title}"
     source = article.get("source") or "Fonte desconhecida"
     link = article.get("link", "")
-    return f"{index}. {emoji} **{title}** — {source} | [Link]({link})"
+    return f"{index}. {emoji} **{article_header}** — {source} | [Link]({link})"
 
 
 def _generate_news_block(selected):
@@ -364,6 +375,9 @@ def format_brief(curated, output_path, plan=None, card_paths=None):
     md.append(f"# SIMULA BRIEF — {dia_semana}, {data_str}")
     md.append("")
     md.append(f"**{total_before}** artigos recolhidos | **{total_after}** únicos hoje | **{len(selected)}** selecionados")
+    official_count = sum(1 for article in selected if article.get("is_official_content"))
+    unofficial_count = len(selected) - official_count
+    md.append(f"🟢 **{official_count}** notícias oficiais  ·  ⚪ **{unofficial_count}** media/comunidade")
     md.append("")
     md.append("---")
     md.append("")

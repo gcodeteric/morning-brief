@@ -128,6 +128,9 @@ def _scan_single_feed(feed_info):
                     "category": category,
                     "priority": priority,
                     "no_date": no_date,
+                    "official": feed_info.get("official", False),
+                    "source_type": feed_info.get("source_type", "media"),
+                    "is_official_content": False,  # FIX 2026-05-11: curator fills final official-content verdict.
                 })
             except Exception as entry_err:
                 logger.warning(f"Entrada malformada ignorada no feed '{name}': {entry_err}")

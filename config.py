@@ -23,12 +23,55 @@ FEED_TIMEOUT_SECONDS = 10
 MIN_RELEVANCE_SCORE = 15
 SEEN_LINKS_MAX_AGE_HOURS = 72  # Limpar links com mais de 3 dias
 
+# Official content classification
+# FIX 2026-05-11: centralizar regras de classificação oficial/não oficial.
+OFFICIAL_ANNOUNCEMENT_KEYWORDS = [
+    # Direct announcements
+    "announces", "announced", "launches", "launched", "releases", "released",
+    "confirms", "confirmed", "reveals", "revealed", "introduces", "introduced",
+    # Product/update language
+    "new product", "new hardware", "patch notes", "update v", "version ",
+    "changelog", "hotfix", "firmware", "driver update",
+    # Press/official language
+    "press release", "official statement", "partnership", "sponsorship",
+    "acquisition", "merger", "signs deal", "exclusive",
+    # Series/racing official language
+    "race results", "championship standings", "official results",
+    "FIA confirms", "series announces", "regulation",
+]
+
+COMMUNITY_KEYWORDS = [
+    "review", "opinion", "guide", "tutorial", "setup guide", "how to",
+    "best", "worst", "ranked", "tier list", "comparison", "vs",
+    "discussion", "reddit", "community", "fan", "modding", "mod release",
+]
+
+# Source type display labels (for brief and dashboard)
+SOURCE_TYPE_LABELS = {
+    "hardware":  "🔧 HARDWARE",
+    "simulator": "🎮 SIMULADOR",
+    "media":     "📰 MEDIA",
+    "series":    "🏆 SÉRIE",
+    "community": "💬 COMUNIDADE",
+    "esports":   "🎯 ESPORTS",
+}
+
+OFFICIAL_BADGE = "🟢 OFICIAL"
+UNOFFICIAL_BADGE = "⚪ NÃO OFICIAL"
+
+CATEGORY_WEIGHTS = {
+    "sim_racing":  0.60,
+    "motorsport":  0.20,
+    "truck":       0.15,
+    "farming":     0.05,
+}
+
+# FIX 2026-05-11: alinhar garantias com a nova distribuição editorial.
 GUARANTEE_CATEGORIES = {
-    "sim_racing": 2,    # Categoria nuclear do negócio
-    "nostalgia": 1,
-    "hardware": 1,
-    "motorsport": 1,
-    "racing_games": 1,
+    "sim_racing":  6,   # minimum 6 sim racing articles per brief
+    "motorsport":  2,   # minimum 2 motorsport articles
+    "truck":       2,   # minimum 2 truck articles
+    "farming":     1,   # minimum 1 farming article
 }
 GUARANTEE_PORTUGAL = True
 MAX_PER_SOURCE = 3  # Máximo de artigos por fonte no top 15

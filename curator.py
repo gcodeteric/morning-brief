@@ -24,6 +24,40 @@ logger = logging.getLogger(__name__)
 # Flag controlada por main.py para modo dry-run (não escrever ficheiros de estado)
 _DRY_RUN = False
 
+
+def detect_official_content(article: dict, feed_meta: dict) -> bool:
+    """
+    Returns True if article content is officially from a brand/series/dev.
+    Works even when the source feed is not itself official.
+
+    Priority:
+    1. Feed is tagged official=True -> always official
+    2. Feed is tagged official=False but title/description contains
+       official announcement keywords -> treat as official content
+    3. Feed is community/Reddit -> never official regardless of keywords
+    """
+    try:
+        # Rule 1: official source
+        if feed_meta.get("official", False):
+            return True
+
+        # Rule 2: never mark community sources as official
+        if feed_meta.get("source_type") == "community":
+            return False
+
+        # Rule 3: keyword detection in non-official sources
+        text = (
+            (article.get("title") or "") + " " +
+            (article.get("summary") or "") + " " +
+            (article.get("description") or "")
+        ).lower()
+
+        from config import OFFICIAL_ANNOUNCEMENT_KEYWORDS
+        keyword_hits = sum(1 for kw in OFFICIAL_ANNOUNCEMENT_KEYWORDS if kw.lower() in text)
+        return keyword_hits >= 2  # require at least 2 keyword matches to avoid false positives
+    except Exception:
+        return False  # FIX 2026-05-11: official detection must never break curation.
+
 # ============================================================================
 # Keywords para scoring
 # ============================================================================
@@ -416,6 +450,9 @@ def _normalize_article(article):
     normalized["link"] = link or ""
     normalized["category"] = category
     normalized["priority"] = priority
+    normalized["official"] = bool(normalized.get("official", False))
+    normalized["source_type"] = str(normalized.get("source_type") or "media")
+    normalized["is_official_content"] = bool(normalized.get("is_official_content", False))
 
     if missing_fields:
         logger.info(
@@ -541,7 +578,10 @@ def curate_articles(articles):
     # Scoring
     # ========================================================================
     for article in deduped:
+        article["is_official_content"] = detect_official_content(article, article)
         article["score"] = _score_article(article)
+        if article["is_official_content"]:
+            article["score"] = article.get("score", 0) + 5  # FIX 2026-05-11: official news gets a priority boost.
 
     # FIX 2.5 — Source rarity bonus: fontes que não apareceram em briefs recentes +5
     recent_sources = set()
@@ -597,6 +637,27 @@ def curate_articles(articles):
         ]
         if pt_articles:
             idx, article = pt_articles[0]
+            selected.append(article)
+            used_indices.add(idx)
+            src = article.get("source", "Fonte desconhecida")
+            source_counts[src] = source_counts.get(src, 0) + 1
+
+    # FIX 2026-05-11: garantir sinal oficial de hardware/simulador quando há candidato elegível.
+    has_official_hardware_or_sim = any(
+        a.get("is_official_content") and a.get("source_type") in ("hardware", "simulator")
+        for a in selected
+    )
+    if not has_official_hardware_or_sim:
+        official_product_articles = [
+            (i, a) for i, a in enumerate(deduped)
+            if i not in used_indices
+            and a.get("is_official_content")
+            and a.get("source_type") in ("hardware", "simulator")
+            and a.get("score", 0) >= MIN_RELEVANCE_SCORE
+            and source_counts.get(a.get("source", "Fonte desconhecida"), 0) < _max_articles_for_source(a)
+        ]
+        if official_product_articles:
+            idx, article = official_product_articles[0]
             selected.append(article)
             used_indices.add(idx)
             src = article.get("source", "Fonte desconhecida")
