@@ -629,18 +629,18 @@ NOTA OBRIGATÓRIA NA DESCRIÇÃO:
     md.append("````")
     md.append("")
 
-    # ── PROMPT 4: YOUTUBE SEMANAL (só ao domingo) ─────────────────────────
-    if is_sunday:
-        yt_weekly = plan.get("youtube_weekly", [])
-        weekly_block = _generate_news_block(yt_weekly)
-        md.append("---")
-        md.append("")
-        md.append("## PROMPT 4 — YOUTUBE SEMANAL (8-12 min) 📅 DOMINGO")
-        md.append("")
-        md.append("*Artigos acumulados ao longo da semana (memória semanal real via weekly_cache.json).*")
-        md.append("")
-        md.append("````")
-        md.append(f"""És o produtor de conteúdo do Simula Project.
+    # ── PROMPT 4: YOUTUBE SEMANAL ─────────────────────────────────────────
+    # FIX 2026-05-11: garantir os 6 prompts editoriais obrigatorios em todos os briefs.
+    yt_weekly = plan.get("youtube_weekly", [])
+    weekly_block = _generate_news_block(yt_weekly)
+    md.append("---")
+    md.append("")
+    md.append("## PROMPT 4 — YOUTUBE SEMANAL (8-12 min)")
+    md.append("")
+    md.append("*Artigos acumulados ao longo da semana (memória semanal real via weekly_cache.json).*")
+    md.append("")
+    md.append("````")
+    md.append(f"""És o produtor de conteúdo do Simula Project.
 Vais criar o RESUMO SEMANAL de sim racing — vídeo YouTube faceless 8-12 minutos. PT-PT.
 
 MELHORES NOTÍCIAS DA SEMANA ({data_str}):
@@ -667,8 +667,8 @@ NOTA OBRIGATÓRIA NA DESCRIÇÃO:
 {NOTA_IA_YOUTUBE}
 {NOTAS_LEGAIS_SOCIAL}
 {REGRA_NAO_PUBLICAR}""")
-        md.append("````")
-        md.append("")
+    md.append("````")
+    md.append("")
 
     # ── PROMPT 5: REDDIT ─────────────────────────────────────────────────
     md.append("---")
